@@ -17,6 +17,12 @@ def receive_string(conn, message_length):
     message = conn.recv(message_length).decode(FORMAT)
     print(f"Client sent: {message}")
 
+def send_message(message, conn):
+    #responseBuff = f"Message received, Type: [{msg_type}]"
+    conn.send(str(len(message)).ljust(64,' ').encode(FORMAT))
+    conn.send(message.encode(FORMAT))
+    print(f"{message} sent back to the client")
+
 def write_PCD(points_list, number):
     header = f""" VERSION .7
 FIELDS x y z normal_x normal_y normal_z
@@ -36,32 +42,42 @@ DATA ascii"""
 
 def receive_PCD(conn, message_length):    
     points = ""
+    errorLog="Error Log:\n"
+    chunks = message_length
+    step = int.from_bytes(conn.recv(HEADER), byteorder='big', signed=False)
+    counter = 0;
+    for i in range(chunks):
+        print(f"Chunk #{i}")
+        for j in range(step):
+            try:
+                x = struct.unpack('>d',conn.recv(8))[0]
+                y = struct.unpack('>d',conn.recv(8))[0]
+                z = struct.unpack('>d',conn.recv(8))[0]
+                n_x = struct.unpack('>d',conn.recv(8))[0]
+                n_y = struct.unpack('>d',conn.recv(8))[0]
+                n_z = struct.unpack('>d',conn.recv(8))[0]
+                points+=f"\n{x} {y} {z} {n_x} {n_y} {n_z}"
+                counter+=1;
+            except:
+                errorLog+=f"\nChunk #{i} is corrupt"
+    write_PCD(points, counter)
+    print(errorLog)
+    send_message("[SERVER: POINTCLOUD RECEIVED]", conn)
+            
+    """points = ""
+    #vertices = int.from_bytes(conn.recv(8),byteorder = 'big', signed=False)
     counter = 0
-    intChunks = int.from_bytes(conn.recv(8), byteorder = 'big', signed = False);
-    modulo = int.from_bytes(conn.recv(8), byteorder = 'big', signed    = False);
-    print("Starting to receive the PointCloud")
-    for i in range(intChunks):        
-        for j in range(100):
-            x = struct.unpack('>d', conn.recv(8))[0]
-            y = struct.unpack('>d', conn.recv(8))[0]
-            z = struct.unpack('>d', conn.recv(8))[0]
-            normal_x = struct.unpack('>d', conn.recv(8))[0]
-            normal_y = struct.unpack('>d', conn.recv(8))[0]
-            normal_z = struct.unpack('>d', conn.recv(8))[0]            
-            points += f"\n{x} {z} {y} {normal_x} {normal_y} {normal_z}"
-        print(f"Chunk # {i} received")
-        time.sleep(0.1)
-    for i in range(modulo):
-        x = struct.unpack('>d', conn.recv(8))[0]
-        y = struct.unpack('>d', conn.recv(8))[0]
-        z = struct.unpack('>d', conn.recv(8))[0]
-        normal_x = struct.unpack('>d', conn.recv(8))[0]
-        normal_y = struct.unpack('>d', conn.recv(8))[0]
-        normal_z = struct.unpack('>d', conn.recv(8))[0]
-        points += f"\n{x} {z} {y} {normal_x} {normal_y} {normal_z}"
-    size = intChunks*100+modulo
-    write_PCD(points, size)
+    for i in range(message_length):
+        counter += 1
+        #if(i%500==0):
+        #    print(f"Chunk #{i}")
+        size = int.from_bytes(conn.recv(8),byteorder = 'big', signed=False)
+        print(f"cChunk #{i};\t{size} characters are waited")
+        line = conn.recv(size).decode(FORMAT)
+        points += line
+    write_PCD(points, i)
 """
+    """
     for i in range(message_length):        
         print(i)
         #time.sleep(.000001)
@@ -83,15 +99,12 @@ def receive_PCD(conn, message_length):
         except:
             print( f"X: {len(x_bytes)}Y: {len(y_bytes)} Z: {len(z_bytes)}\tX_n: {len(x_n_bytes)} Y_n: {len(y_n_bytes)} Z_n: {len(z_n_bytes)}" )        
     write_PCD(points, counter)
-"""   
+    """
+    
 
 
 
-def send_message(message, conn):
-    #responseBuff = f"Message received, Type: [{msg_type}]"
-    conn.send(str(len(message)).ljust(64,' ').encode(FORMAT))
-    conn.send(message.encode(FORMAT))
-    print(f"{message} sent back to the client")
+
 
 
 
