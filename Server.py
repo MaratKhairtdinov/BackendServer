@@ -2,9 +2,12 @@ import socket
 import threading
 import time
 import struct
+import open3d as o3d
+import numpy as np
+import copy
 
 HEADER = 8
-TCP_IP = '192.168.0.100'
+TCP_IP = '192.168.0.102'
 TCP_PORT = 10000
 BUFFER_SIZE = 1024
 FORMAT = 'utf-8'
@@ -39,30 +42,35 @@ DATA ascii"""
     file.write(header)
     file.close()
     print("[PCD_RECEIVED]")
+    point_cloud = o3d.io.read_point_cloud(r'C:\Users\Marat\Documents\Thesis\PythonServer\ReceivedPointcloud.pcd')
+    o3d.visualization.draw_geometries([point_cloud], top = 30, left = 0, point_show_normal=False)
 
 def receive_PCD(conn, message_length):    
     points = ""
-    errorLog="Error Log:\n"
+    errorLog="Error Log:"
     chunks = message_length
     step = int.from_bytes(conn.recv(HEADER), byteorder='big', signed=False)
     counter = 0;
     for i in range(chunks):
         print(f"Chunk #{i}")
         for j in range(step):
+            #print(f"Vertex #{i*step+j}")
             try:
                 x = struct.unpack('>d',conn.recv(8))[0]
-                y = struct.unpack('>d',conn.recv(8))[0]
                 z = struct.unpack('>d',conn.recv(8))[0]
+                y = struct.unpack('>d',conn.recv(8))[0]
                 n_x = struct.unpack('>d',conn.recv(8))[0]
-                n_y = struct.unpack('>d',conn.recv(8))[0]
                 n_z = struct.unpack('>d',conn.recv(8))[0]
+                n_y = struct.unpack('>d',conn.recv(8))[0]
                 points+=f"\n{x} {y} {z} {n_x} {n_y} {n_z}"
                 counter+=1;
             except:
                 errorLog+=f"\nChunk #{i} is corrupt"
-    write_PCD(points, counter)
-    print(errorLog)
     send_message("[SERVER: POINTCLOUD RECEIVED]", conn)
+    print(errorLog)
+    write_PCD(points, counter)
+    
+    
             
     """points = ""
     #vertices = int.from_bytes(conn.recv(8),byteorder = 'big', signed=False)
