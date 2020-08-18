@@ -1,30 +1,52 @@
 import socket
+import threading
+import time
+import struct
+import open3d as o3d
+import numpy as np
+import copy
 
-serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-host = "192.168.0.101"#socket.gethostname()
-port = 5555
-print(host)
-print(port)
-serversocket.bind((host,port))
+HEADER = 8
+TCP_IP = '192.168.0.100'
+TCP_PORT = 10000
+BUFFER_SIZE = 1024
+FORMAT = 'utf-8'
+DISCONNECT_MSG = "!DISCONNECT!"
 
-serversocket.listen(5)
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind((TCP_IP, TCP_PORT))
 
-print('server started and listening')
-while 1:
-    (clientsocket, address) = serversocket.accept()
-    print("Connection found")
+class NetworkDataHandler:
+    def __init__(self, client)
+        self.client = client
+
+class Client:
+    def __init__(self, TCP_IP, TCP_PORT, FORMAT):
+        self.TCP_IP = TCP_IP
+        self.TCP_PORT = TCP_PORT
+        self.FORMAT = FORMAT
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind((TCP_IP, TCP_PORT))
+        self.network_data_handler = NetworkDataHandler(self)
+    def start_listening():
+        self.s.listen()
+        print("[Listening] Server is listening on {SERVER}"
     
-    #Decode ASCII
-    #data = clientsocket.recv(1024).decode('ascii')
     
-    #Decode Bytes
-    data = clientsocket.recv(1024).decode("utf-8")
-    print(data)
- 
-    if data == "Ping":
-        print ("Unity Sent: " + str(data))
-        #clientsocket.send("Pong").encode("utf-8")
-    else:
-        print(data)
-    print("closed socket")
-    clientsocket.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

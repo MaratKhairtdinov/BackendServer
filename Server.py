@@ -7,7 +7,7 @@ import numpy as np
 import copy
 
 HEADER = 8
-TCP_IP = '192.168.0.102'
+TCP_IP = '192.168.0.100'
 TCP_PORT = 10000
 BUFFER_SIZE = 1024
 FORMAT = 'utf-8'
@@ -18,6 +18,7 @@ s.bind((TCP_IP, TCP_PORT))
 
 def receive_string(conn, message_length):
     message = conn.recv(message_length).decode(FORMAT)
+    send_message(message, connzz)
     print(f"Client sent: {message}")
 
 def send_message(message, conn):
@@ -25,6 +26,11 @@ def send_message(message, conn):
     conn.send(str(len(message)).ljust(64,' ').encode(FORMAT))
     conn.send(message.encode(FORMAT))
     print(f"{message} sent back to the client")
+
+def visualize_PCD(name):
+    point_cloud = o3d.io.read_point_cloud(f'{name}')
+    point_cloud.estimate_normals(search_param = o3d.geometry.KDTreeSearchParamHybrid(radius = 0.5, max_nn = 30))
+    o3d.visualization.draw_geometries([point_cloud], top = 30, left = 0, point_show_normal=True)
 
 def write_PCD(points_list, number):
     header = f""" VERSION .7
@@ -37,17 +43,21 @@ HEIGHT 1
 VIEWPOINT 0 0 0 1 0 0 0
 POINTS {number}
 DATA ascii"""
-    header+=points_list
-    file = open("ReceivedPointcloud.pcd","w")
+    
+    header += points_list
+    name = 'ReceivedPointCloud.pcd'                                  
+    file = open(name,"w")
     file.write(header)
     file.close()
-    print("[PCD_RECEIVED]")
-    point_cloud = o3d.io.read_point_cloud(r'C:\Users\Marat\Documents\Thesis\PythonServer\ReceivedPointcloud.pcd')
-    o3d.visualization.draw_geometries([point_cloud], top = 30, left = 0, point_show_normal=False)
+    print("[PCD_WRITTEN_INTO_FILE]")
+    #visualize_PCD(name)
+    
 
-def receive_PCD(conn, message_length):    
+
+
+def receive_PCD(conn, message_length):   
     points = ""
-    errorLog="Error Log:"
+    errorLog = ""
     chunks = message_length
     step = int.from_bytes(conn.recv(HEADER), byteorder='big', signed=False)
     counter = 0;
@@ -66,58 +76,17 @@ def receive_PCD(conn, message_length):
                 counter+=1;
             except:
                 errorLog+=f"\nChunk #{i} is corrupt"
-    send_message("[SERVER: POINTCLOUD RECEIVED]", conn)
-    print(errorLog)
-    write_PCD(points, counter)
-    
-    
+    send_message(errorLog, conn)
+    if len(errorLog)==0:        
+        write_PCD(points, counter)
+        send_message(f"[SERVER: POINTCLOUD RECEIVED]", conn)
+    else:        
+        print(errorLog)
             
-    """points = ""
-    #vertices = int.from_bytes(conn.recv(8),byteorder = 'big', signed=False)
-    counter = 0
-    for i in range(message_length):
-        counter += 1
-        #if(i%500==0):
-        #    print(f"Chunk #{i}")
-        size = int.from_bytes(conn.recv(8),byteorder = 'big', signed=False)
-        print(f"cChunk #{i};\t{size} characters are waited")
-        line = conn.recv(size).decode(FORMAT)
-        points += line
-    write_PCD(points, i)
-"""
-    """
-    for i in range(message_length):        
-        print(i)
-        #time.sleep(.000001)
-        x_bytes = conn.recv(8)
-        y_bytes = conn.recv(8)
-        z_bytes = conn.recv(8)
-        x_n_bytes = conn.recv(8)
-        y_n_bytes = conn.recv(8)
-        z_n_bytes = conn.recv(8)
-        try:
-            x = struct.unpack('>d', x_bytes)[0]
-            y = struct.unpack('>d', y_bytes)[0]
-            z = struct.unpack('>d', z_bytes)[0]
-            normal_x = struct.unpack('>d', x_n_bytes)[0]
-            normal_y = struct.unpack('>d', y_n_bytes)[0]
-            normal_z = struct.unpack('>d', z_n_bytes)[0]
-            counter += 1
-            points += f"\n{x}    {z}    {y}    {normal_x}    {normal_y}    {normal_z}"
-        except:
-            print( f"X: {len(x_bytes)}Y: {len(y_bytes)} Z: {len(z_bytes)}\tX_n: {len(x_n_bytes)} Y_n: {len(y_n_bytes)} Z_n: {len(z_n_bytes)}" )        
-    write_PCD(points, counter)
-    """
-    
-
-
-
-
-
-
-
+        
 def handle_client(conn, addr):
     print (f"[NEW CONNECTION] {addr} connected.")
+    pointcloud = o3d.geometry.PointCloud()
     connected = True    
     while connected:
         msg_type =   int.from_bytes(conn.recv(HEADER), byteorder = 'big', signed = False)
