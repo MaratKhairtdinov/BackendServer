@@ -18,7 +18,7 @@ s.bind((TCP_IP, TCP_PORT))
 
 def receive_string(conn, message_length):
     message = conn.recv(message_length).decode(FORMAT)
-    send_message(message, connzz)
+    send_message(message, conn)
     print(f"Client sent: {message}")
 
 def send_message(message, conn):
@@ -55,7 +55,7 @@ DATA ascii"""
 
 
 
-def receive_PCD(conn, message_length):   
+def receive_PCD(conn, message_length):
     points = ""
     errorLog = ""
     chunks = message_length
