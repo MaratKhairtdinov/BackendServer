@@ -5,165 +5,97 @@ import struct
 import open3d as o3d
 import numpy as np
 import copy
+import sys
+import traceback
 from enum import Enum
 
 class NetworkDataType(Enum):
-    errorType = 0
+    Response = 0
     String = 1
-    PointCloud = 2
-    Matrix = 3
 
-class NetworkErrorType(Enum):
-    NoError = 0
-    DataCorrupt = 1    
+class NetworkResponseType(Enum):
+    AllGood=0
+    DataCorrupt=1
 
-class NetworkDataHandler:
+class NetworkDataHandler:    
     def __init__(self, server):
         self.server = server
-    def handle_string(buffer):
-        input_string = None
-        try:
-            input_string = buffer.decode('utf-8')
-        except:
-            server.send_error(NetworkErrorType.DataCorrupt)
-            
-    def handle_point_cloud(buffer):
-        points = ''
-        errorLog = ''
-        chunk_size = struct.unpack_from('>i', buffer, 0)
-        chunks = struck.unpack_from('>i', buffer, 4)
-        offset = 8
-        for chunk in range(chunks):
-            for i in range(chunk_size):
-                try:
-                    offset += (chunk*chunk_size + i)*8*6
-                    x = struct.unpack_from('>d', buffer, offset)
-                    y = struct.unpack_from('>d', buffer, offset+8)
-                    z = struct.unpack_from('>d', buffer, offset+16)
-                    norm_x = struct.unpack_from('>d', buffer, offset+24)
-                    norm_y = struct.unpack_from('>d', buffer, offset+32)
-                    norm_z = struct.unpack_from('>d', buffer, offset+40)
-                except:
-                    errorLog+=f"\nChunk #{chunk}"                    
-            print("Chunk# ", chunk, " is received")
-        if len(errorLog)>0:
-            print(errorLog)
-            server.send_error(NetworkErrorType.DataCorrupt)
+        #self.conn = conn
+        #self.addr = addr
+        self.last_buffer_sent = None;
+        self.last_data_type_sent = None;
         
-    def handle_network_data(self, data_type, buffer):
-        if data_type == NetworkDataType.String:
-            handle_string(buffer)
-        elif data_type == NetworkDataType.PointCloud:
-            handle_point_cloud(buffer)
-
-
+    def handle_response(self, buffer):
+        response = struct.unpack('>h', buffer)
+        if response == NetworkResponseType.AllGood.value:
+            pass
+        elif response == NetworkResponseType.DataCorrupt.value:
+            self.server.send(self.conn, self.addr, self.last_data_type_sent, self.last_buffer_sent)
+            
+    def handle_string(self, buffer):
+        print(buffer.decode('utf-8'))
+        self.server.send_response(self.conn, self.addr, NetworkResponseType.AllGood) 
+        
+    def handle_network_data(self, conn, addr, data_type, buffer):
+        self.conn = conn
+        self.addr = addr
+    
+        if data_type == NetworkDataType.String.value:
+            self.handle_string(buffer)
+        elif data_type == NetworkDataType.Response.value:
+            self.handle_response(buffer)
+        
 
 class Server:
-    def __init__(self, TCP_IP, TCP_PORT, FORMAT):
+    def __init__(self, TCP_IP, PORT):
+        print("[STARTING] Server is starting")
         self.TCP_IP = TCP_IP
-        self.TCP_PORT = TCP_PORT
-        self.FORMAT = FORMAT
+        self.PORT   = PORT
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.s.bind((TCP_IP, TCP_PORT))
-        self.network_data_handler = NetworkDataHandler(self)
-        self.listening_threads = []
-        self.clients = []
-        self.input_buffer = None
-        self.output_buffer = None
-        self.output_data_type = None
+        self.s.bind((self.TCP_IP, self.PORT))
+        self.data_handler = NetworkDataHandler(self)
+        self.handlers = []
         
-    def receive_data(conn, addr):
-        connectet = True
-        while connected:
-            buffer_length = struct.unpack('>q', conn.recv(8))[0]
-            data_type = stuct.unpack('>h', conn.recv(2))[0]
-            self.input_buffer = conn.recv(buffer_length)
-            self.network_data_handler.handle_network_data(data_type, self.input_buffer)
-            
-    def send_data():
-        for conn in self.clients:
-            conn = conn[0]
-            conn.send(struct.pack('>q',len(self.output_buffer)))
-            conn.send(struct.pack('>h',self.output_data_type.value))
-            conn.send(output_buffer)
+    def send(self, conn, addr, data_type, buffer):
+        conn.send(struct.pack('>h',data_type.value))
+        conn.send(struct.pack('>q',len(buffer)))
+        conn.send(buffer)
         
-    def start_listening(self, max_connections):
-        print("[STARTING] server  is starting...")
+    def send_response(self, conn, addr, response):
+        send(conn, addr, NetworkDataType.Response, struct.pack('>h',response.value))
+        
+    def listen(self, conn, addr):
+
+        input_buff = []
+        
+        data_type  = struct.unpack('>h', conn.recv(2))[0]
+        chunk_size = struct.unpack('>i', conn.recv(4))[0]
+        chunks     = struct.unpack('>i', conn.recv(4))[0]
+        residual   = struct.unpack('>i', conn.recv(4))[0]
+        
+        for i in range(chunks):
+            input_buff.append(conn.recv(chunk_size))
+
+        input_buff.append(conn.recv(residual))
+        input_buff = b''.join(input_buff)
+        
+        self.data_handler.handle_network_data(conn, addr, data_type, input_buff)
+        
+    def start_listening(self, number_of_clients):
         self.s.listen()
-        print("[Listening] Server is listening on {SERVER}")
-        self.connections = 0;
-        while self.connections <= max_connections:
-            print(f"[ACTIVE CONNECTIONS] {threading.activeCount()-1}")
+        print("[LISTENING] Server is listening on{SERVER}")
+        for i in range(number_of_clients):
+            print(f"[ACTIVE CONNECTIONS]{threading.activeCount()-1}")
+            server = self
             conn, addr = self.s.accept()
-            self.clients.append([conn, addr])
-            thread = threading.Thread(target = receive_data, args = (conn, addr))
-            self.listening_threads.append(thread)
+            #self.handlers.append(NetworkDataHandler(server, conn, addr))
+            thread = threading.Thread(target = self.listen, args = (conn, addr))
             thread.start()
-            
-    def send_error(error):
-        self.output_buffer = struct.pack('>h', error.value)
-        self.output_data_type = NetworkDataType.errorType
-        send_data()
-        
-    def send_string(strg):
-        self.output_buffer = strg.encode('utf-8')
-        self.output_data_type = NetworkDataType.String
-        send_data()
-        
-    
 
+TCP_IP = "192.168.0.100"
+PORT = 10000
 
+server = Server(TCP_IP, PORT)
+server.start_listening(5)
 
-
-
-
-str1 = struct.pack('>h',1)
-str2 = struct.pack('>h',2)
-str3 = str1+str2
-print(str1)
-print(str2)
-print(type(str1))
-print(struct.unpack_from('>h', str3, 2))
 input()
-
-
-
-
-
-
-
-
-
-
-
-
-
-            
-'''
-HEADER = 8
-TCP_IP = '192.168.0.102'
-TCP_PORT = 10000
-BUFFER_SIZE = 1024
-FORMAT = 'utf-8'
-DISCONNECT_MSG = "!DISCONNECT!"
-
-client = Server(TCP_IP, TCP_PORT, FORMAT)
-client.start_listening(1)
-'''
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

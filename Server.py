@@ -7,7 +7,7 @@ import numpy as np
 import copy
 
 HEADER = 8
-TCP_IP = '192.168.0.100'
+TCP_IP = '192.168.0.101'
 TCP_PORT = 10000
 BUFFER_SIZE = 1024
 FORMAT = 'utf-8'
