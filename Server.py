@@ -5,35 +5,43 @@ import struct
 import open3d as o3d
 import numpy as np
 import copy
+import sys
+import traceback
+from enum import Enum
 
-HEADER = 8
-TCP_IP = '192.168.0.101'
-TCP_PORT = 10000
-BUFFER_SIZE = 1024
-FORMAT = 'utf-8'
-DISCONNECT_MSG = "!DISCONNECT!"
+class NetworkDataType(Enum):
+    Response = 0
+    String = 1
+    PointCloud = 2
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.bind((TCP_IP, TCP_PORT))
+class NetworkResponseType(Enum):
+    AllGood=0
+    DataCorrupt=1
 
-def receive_string(conn, message_length):
-    message = conn.recv(message_length).decode(FORMAT)
-    send_message(message, conn)
-    print(f"Client sent: {message}")
+class NetworkDataHandler:    
+    def __init__(self, server):
+        self.server = server
+        self.last_buffer_sent = None;
+        self.last_data_type_sent = None;
+        
+    def handle_response(self, buffer):
+        response = struct.unpack('>h', buffer)
+        if response == NetworkResponseType.AllGood.value:
+            pass
+        elif response == NetworkResponseType.DataCorrupt.value:
+            self.server.send(self.conn, self.addr, self.last_data_type_sent, self.last_buffer_sent)
+            
+    def handle_string(self, buffer):
+        response = None
+        try:
+            print(buffer.decode('utf-8'))
+            response = NetworkResponseType.AllGood
+        except:
+            response = NetworkResponseType.DataCorrupt            
+        self.server.send_response(self.conn, self.addr, response)
 
-def send_message(message, conn):
-    #responseBuff = f"Message received, Type: [{msg_type}]"
-    conn.send(str(len(message)).ljust(64,' ').encode(FORMAT))
-    conn.send(message.encode(FORMAT))
-    print(f"{message} sent back to the client")
-
-def visualize_PCD(name):
-    point_cloud = o3d.io.read_point_cloud(f'{name}')
-    point_cloud.estimate_normals(search_param = o3d.geometry.KDTreeSearchParamHybrid(radius = 0.5, max_nn = 30))
-    o3d.visualization.draw_geometries([point_cloud], top = 30, left = 0, point_show_normal=True)
-
-def write_PCD(points_list, number):
-    header = f""" VERSION .7
+    def write_PCD(self, points_list, number):
+        header = f""" VERSION .7
 FIELDS x y z normal_x normal_y normal_z
 SIZE 4 4 4 4 4 4
 TYPE F F F F F F
@@ -42,71 +50,117 @@ WIDTH {number}
 HEIGHT 1
 VIEWPOINT 0 0 0 1 0 0 0
 POINTS {number}
-DATA ascii"""
-    
-    header += points_list
-    name = 'ReceivedPointCloud.pcd'                                  
-    file = open(name,"w")
-    file.write(header)
-    file.close()
-    print("[PCD_WRITTEN_INTO_FILE]")
-    #visualize_PCD(name)
-    
+DATA ascii\n"""        
+        header += points_list
+        name = 'ReceivedPointCloud.pcd'                                  
+        file = open(name,"w")
+        file.write(header)
+        file.close()
+        print("[PCD_WRITTEN_INTO_FILE]")
+        #visualize_PCD(name)
 
-
-
-def receive_PCD(conn, message_length):
-    points = ""
-    errorLog = ""
-    chunks = message_length
-    step = int.from_bytes(conn.recv(HEADER), byteorder='big', signed=False)
-    counter = 0;
-    for i in range(chunks):
-        print(f"Chunk #{i}")
-        for j in range(step):
-            #print(f"Vertex #{i*step+j}")
-            try:
-                x = struct.unpack('>d',conn.recv(8))[0]
-                z = struct.unpack('>d',conn.recv(8))[0]
-                y = struct.unpack('>d',conn.recv(8))[0]
-                n_x = struct.unpack('>d',conn.recv(8))[0]
-                n_z = struct.unpack('>d',conn.recv(8))[0]
-                n_y = struct.unpack('>d',conn.recv(8))[0]
-                points+=f"\n{x} {y} {z} {n_x} {n_y} {n_z}"
-                counter+=1;
-            except:
-                errorLog+=f"\nChunk #{i} is corrupt"
-    send_message(errorLog, conn)
-    if len(errorLog)==0:        
-        write_PCD(points, counter)
-        send_message(f"[SERVER: POINTCLOUD RECEIVED]", conn)
-    else:        
-        print(errorLog)
-            
+    def handle_point_cloud(self, buffer):
+        points_list = ""
+        offset = 4
+        points = struct.unpack_from('i', buffer, 0)[0]
         
-def handle_client(conn, addr):
-    print (f"[NEW CONNECTION] {addr} connected.")
-    pointcloud = o3d.geometry.PointCloud()
-    connected = True    
-    while connected:
-        msg_type =   int.from_bytes(conn.recv(HEADER), byteorder = 'big', signed = False)
-        msg_length = int.from_bytes(conn.recv(HEADER), byteorder = 'big', signed = False)
-        if msg_type == 1:
-            receive_string(conn, msg_length)
-        elif msg_type == 2:
-            receive_PCD(conn, msg_length)        
-            
+        response = None
+        try:
+            for i in range(points):
+                points_list += f"{struct.unpack_from('f', buffer, offset)[0]} "
+                points_list += f"{struct.unpack_from('f', buffer, offset+8)[0]} "
+                points_list += f"{struct.unpack_from('f', buffer, offset+4)[0]} "
+                points_list += f"{struct.unpack_from('f', buffer, offset+12)[0]} "
+                points_list += f"{struct.unpack_from('f', buffer, offset+20)[0]} "
+                points_list += f"{struct.unpack_from('f', buffer, offset+16)[0]}\n"
+                offset += 24
+            response = NetworkResponseType.AllGood            
+        except Exception:            
+            response = NetworkResponseType.DataCorrupt            
+        self.server.send_response(self.conn, self.addr, response)
+        self.write_PCD(points_list, points) 
         
-def start():
-    s.listen()
-    print("[LISTENING] Server is listening on {SERVER}")
-    while True:
-        print(f"[ACTIVE CONNECTIONS]{threading.activeCount()-1}")
-        conn, addr = s.accept()
-        thread = threading.Thread(target = handle_client, args = (conn, addr))
-        thread.start()
-        #print(f"[ACTIVE CONNECTIONS]{threading.activeCount()-1}")
+        
+    def handle_network_data(self, conn, addr, data_type, buffer):
+        self.conn = conn
+        self.addr = addr
+    
+        if data_type == NetworkDataType.String.value:
+            self.handle_string(buffer)
+        elif data_type == NetworkDataType.Response.value:
+            self.handle_response(buffer)
+        elif data_type == NetworkDataType.PointCloud.value:
+            self.handle_point_cloud(buffer)
+        
 
-print ("[STATING] server is starting...")
-start()
+class Server:
+    def __init__(self, TCP_IP, PORT):
+        print("[STARTING] Server is starting")
+        self.TCP_IP = TCP_IP
+        self.PORT   = PORT
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.s.bind((self.TCP_IP, self.PORT))
+        self.data_handler = NetworkDataHandler(self)
+        self.handlers = []
+        self.receiving = False
+        
+    def send(self, conn, addr, data_type, buffer):
+        conn.send(struct.pack('>h',data_type.value))
+        length_buffer = struct.pack('i',len(buffer))
+        conn.send(length_buffer)
+        conn.send(buffer)
+        print("data sent")
 
+        
+    def send_response(self, conn, addr, response):        
+        self.send(conn, addr, NetworkDataType.Response, struct.pack('>h', response.value))
+        print(f"{response.name} sent back")
+        
+    def listen(self, conn, addr):
+        receiving = True        
+        while receiving:
+            input_buff = []            
+            data_type  = struct.unpack('>h', conn.recv(2))[0]
+            chunk_size = struct.unpack('>i', conn.recv(4))[0]
+            chunks     = struct.unpack('>i', conn.recv(4))[0]
+            residual   = struct.unpack('>i', conn.recv(4))[0]
+            print(f"{chunks} chunks of size {chunk_size} expected")
+            errorLog = ""
+            for i in range(chunks):
+                received = False
+                while not received:
+                    chunk = conn.recv(chunk_size)
+                    if len(chunk)==chunk_size:
+                        input_buff.append(chunk)
+                        conn.send(struct.pack('>h', NetworkResponseType.AllGood.value))
+                        received = True
+                        #print(f"chunk #{i}")
+                    else:
+                        errorLog+="\nChunk #{i} corrupt"
+                        conn.send(struct.pack('>h', NetworkResponseType.DataCorrupt.value))                
+
+            input_buff.append(conn.recv(residual))
+            input_buff = b''.join(input_buff)
+            print(f"{chunks} chuns, residual is {residual} chunk size {chunk_size}")
+            print(f"Data received {len(input_buff)}")
+            print(f"ErrorLog:{errorLog}")
+            self.data_handler.handle_network_data(conn, addr, data_type, input_buff)
+        
+    def start_listening(self, number_of_clients):
+        self.s.listen()
+        print("[LISTENING] Server is listening on{SERVER}")
+        for i in range(number_of_clients):
+            print(f"[ACTIVE CONNECTIONS]{threading.activeCount()-1}")
+            server = self
+            conn, addr = self.s.accept()
+            #self.handlers.append(NetworkDataHandler(server, conn, addr))
+            thread = threading.Thread(target = self.listen, args = (conn, addr))
+            thread.start()
+
+TCP_IP = "192.168.0.100"
+PORT = 10000
+
+server = Server(TCP_IP, PORT)
+server.start_listening(5)
+
+input()
