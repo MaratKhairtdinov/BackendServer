@@ -119,7 +119,7 @@ class Server:
     def listen(self, conn, addr):
         receiving = True        
         while receiving:
-            input_buff = []            
+            input_buff = []
             data_type  = struct.unpack('>h', conn.recv(2))[0]
             chunk_size = struct.unpack('>i', conn.recv(4))[0]
             chunks     = struct.unpack('>i', conn.recv(4))[0]
@@ -134,15 +134,24 @@ class Server:
                         input_buff.append(chunk)
                         conn.send(struct.pack('>h', NetworkResponseType.AllGood.value))
                         received = True
-                        #print(f"chunk #{i}")
+                        print(f"Chunk #{i} received")
                     else:
                         errorLog+="\nChunk #{i} corrupt"
                         conn.send(struct.pack('>h', NetworkResponseType.DataCorrupt.value))                
-
-            input_buff.append(conn.recv(residual))
+            rest_data = conn.recv(residual)
+            last_chunk_received = False
+            while not last_chunk_received:
+                if len(rest_data)== residual:
+                    input_buff.append(rest_data)
+                    conn.send(struct.pack('>h', NetworkResponseType.AllGood.value))
+                    last_chunk_received = True
+                else:
+                    errorLog+="\nLast chunk corrupt"
+                    conn.send(struct.pack('>h', NetworkResponseType.DataCorrupt.value))                
+            
             input_buff = b''.join(input_buff)
-            print(f"{chunks} chuns, residual is {residual} chunk size {chunk_size}")
-            print(f"Data received {len(input_buff)}")
+
+            print(f"Data received, type: {data_type}")
             print(f"ErrorLog:{errorLog}")
             self.data_handler.handle_network_data(conn, addr, data_type, input_buff)
         
