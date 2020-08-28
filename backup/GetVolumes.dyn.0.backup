@@ -1,0 +1,22 @@
+<Workspace Version="1.3.3.4111" X="0" Y="0" zoom="1" ScaleFactor="1" Name="Home" Description="" RunType="Automatic" RunPeriod="1000" HasRunWithoutCrash="True">
+  <NamespaceResolutionMap />
+  <Elements>
+    <DSRevitNodesUI.Categories guid="1ad4cf95-f3f8-43f7-b545-7727d9d73369" type="DSRevitNodesUI.Categories" nickname="Categories" x="43.3333333333333" y="15.3333333333333" isVisible="true" isUpstreamVisible="true" lacing="Disabled" isSelectedInput="True" IsFrozen="false" isPinned="false" index="425:Rooms" />
+    <DSRevitNodesUI.ElementsOfCategory guid="a15cf9d3-b29f-47e4-b32c-8177e2f6c469" type="DSRevitNodesUI.ElementsOfCategory" nickname="All Elements of Category" x="39.3333333333333" y="106" isVisible="true" isUpstreamVisible="true" lacing="Disabled" isSelectedInput="False" IsFrozen="false" isPinned="false">
+      <PortInfo index="0" default="False" />
+    </DSRevitNodesUI.ElementsOfCategory>
+    <Dynamo.Graph.Nodes.ZeroTouch.DSFunction guid="215c0e80-68c1-4078-86b8-e61b28d421a0" type="Dynamo.Graph.Nodes.ZeroTouch.DSFunction" nickname="Element.Geometry" x="47.9999999999999" y="223.333333333333" isVisible="true" isUpstreamVisible="true" lacing="Shortest" isSelectedInput="False" IsFrozen="false" isPinned="false" assembly="RevitNodes.dll" function="Revit.Elements.Element.Geometry">
+      <PortInfo index="0" default="False" />
+    </Dynamo.Graph.Nodes.ZeroTouch.DSFunction>
+  </Elements>
+  <Connectors>
+    <Dynamo.Graph.Connectors.ConnectorModel start="1ad4cf95-f3f8-43f7-b545-7727d9d73369" start_index="0" end="a15cf9d3-b29f-47e4-b32c-8177e2f6c469" end_index="0" portType="0" />
+    <Dynamo.Graph.Connectors.ConnectorModel start="a15cf9d3-b29f-47e4-b32c-8177e2f6c469" start_index="0" end="215c0e80-68c1-4078-86b8-e61b28d421a0" end_index="0" portType="0" />
+  </Connectors>
+  <Notes />
+  <Annotations />
+  <Presets />
+  <Cameras>
+    <Camera Name="Background Preview" eyeX="-607.926432815017" eyeY="1351.64189830956" eyeZ="1827.25656138254" lookX="736.13912723794" lookY="-1326.48131712884" lookZ="-1819.93211615639" upX="0.138442680276716" upY="0.929347500885117" upZ="-0.342267205778425" />
+  </Cameras>
+</Workspace>
