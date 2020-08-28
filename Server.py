@@ -166,7 +166,7 @@ class Server:
             thread = threading.Thread(target = self.listen, args = (conn, addr))
             thread.start()
 
-TCP_IP = "192.168.0.102"
+TCP_IP = "192.168.0.100"
 PORT = 10000
 
 server = Server(TCP_IP, PORT)
