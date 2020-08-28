@@ -23,23 +23,23 @@
       <PortInfo index="0" default="False" />
       <PortInfo index="1" default="False" />
     </Dynamo.Graph.Nodes.ZeroTouch.DSFunction>
-    <CoreNodeModels.Watch guid="2f2d86df-53a8-4131-85e9-001eb29337d8" type="CoreNodeModels.Watch" nickname="Watch" x="184.746695020397" y="80.1490267558446" isVisible="true" isUpstreamVisible="true" lacing="Disabled" isSelectedInput="False" IsFrozen="false" isPinned="false">
-      <PortInfo index="0" default="False" />
-    </CoreNodeModels.Watch>
     <CoreNodeModels.Input.StringInput guid="d638dc8d-089d-4ea5-8436-05adeb2664cd" type="CoreNodeModels.Input.StringInput" nickname="String" x="136.897283017425" y="377.468988275781" isVisible="true" isUpstreamVisible="true" lacing="Disabled" isSelectedInput="True" IsFrozen="false" isPinned="false">
       <System.String>C:\Users\Marat\Documents\Thesis\BackendServer\InnerSurface.obj</System.String>
       <System.String value="C:\Users\Marat\Documents\Thesis\BackendServer\InnerSurface.obj" />
     </CoreNodeModels.Input.StringInput>
+    <CoreNodeModels.Watch guid="2f2d86df-53a8-4131-85e9-001eb29337d8" type="CoreNodeModels.Watch" nickname="Watch" x="139.58434708282" y="17.781974842048" isVisible="true" isUpstreamVisible="true" lacing="Disabled" isSelectedInput="False" IsFrozen="false" isPinned="false">
+      <PortInfo index="0" default="False" />
+    </CoreNodeModels.Watch>
   </Elements>
   <Connectors>
     <Dynamo.Graph.Connectors.ConnectorModel start="1ad4cf95-f3f8-43f7-b545-7727d9d73369" start_index="0" end="a15cf9d3-b29f-47e4-b32c-8177e2f6c469" end_index="0" portType="0" />
     <Dynamo.Graph.Connectors.ConnectorModel start="a15cf9d3-b29f-47e4-b32c-8177e2f6c469" start_index="0" end="4fdf5091-d4c8-47e4-9c3a-64a10a6ddcc1" end_index="0" portType="0" />
     <Dynamo.Graph.Connectors.ConnectorModel start="4fdf5091-d4c8-47e4-9c3a-64a10a6ddcc1" start_index="0" end="8c549bd5-5097-4a22-b53e-c0f22286de51" end_index="0" portType="0" />
-    <Dynamo.Graph.Connectors.ConnectorModel start="8c549bd5-5097-4a22-b53e-c0f22286de51" start_index="0" end="2171876c-d627-4155-ace9-9ed613348754" end_index="0" portType="0" />
     <Dynamo.Graph.Connectors.ConnectorModel start="8c549bd5-5097-4a22-b53e-c0f22286de51" start_index="0" end="2f2d86df-53a8-4131-85e9-001eb29337d8" end_index="0" portType="0" />
     <Dynamo.Graph.Connectors.ConnectorModel start="2171876c-d627-4155-ace9-9ed613348754" start_index="0" end="445472d6-4cde-401c-ae83-aa611014d0bb" end_index="0" portType="0" />
     <Dynamo.Graph.Connectors.ConnectorModel start="445472d6-4cde-401c-ae83-aa611014d0bb" start_index="0" end="48150272-4e43-40cb-b7a0-b7e3a184e6c0" end_index="1" portType="0" />
     <Dynamo.Graph.Connectors.ConnectorModel start="d638dc8d-089d-4ea5-8436-05adeb2664cd" start_index="0" end="48150272-4e43-40cb-b7a0-b7e3a184e6c0" end_index="0" portType="0" />
+    <Dynamo.Graph.Connectors.ConnectorModel start="2f2d86df-53a8-4131-85e9-001eb29337d8" start_index="0" end="2171876c-d627-4155-ace9-9ed613348754" end_index="0" portType="0" />
   </Connectors>
   <Notes />
   <Annotations />
