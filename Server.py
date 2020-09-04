@@ -27,11 +27,29 @@ class NetworkResponseType(Enum):
     AllGood=0
     DataCorrupt=1
     
+class ModelLader:
+    def __init__(self):
+        self.pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(np.empty([0,3])))
+        self.pointcloud.normals = o3d.utility.Vector3dVector(np.empty([0,3]))
+        
+    def load_model(self, number):
+        points = np.empty([0,3])
+        normals = np.empty([0,3])
+        for i in range(1, number+1):
+            pointcloud = o3d.io.read_point_cloud(f'EmulatedPointcloud {i}.pcd')
+            points = np.append(points, np.asarray(pointcloud.points), axis = 0)
+            normals = np.append(normals, np.asarray(pointcloud.normals), axis = 0)
+        points = np.array(points)
+        self.pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(points))
+        self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
+    
 class RegistrationManager: 
 
     def __init__(self):
-        self.target = o3d.io.read_point_cloud("EmulatedPointcloud.pcd")
-        
+        ##self.target = o3d.io.read_point_cloud("EmulatedPointcloud.pcd")
+        self.modelLoader = ModelLader()
+        self.modelLoader.load_model(5)
+        self.target = self.modelLoader.pointcloud
     def draw_registration_result(self, source, target, transformation):
         source_temp = copy.deepcopy(source)
         source_temp.transform(transformation)

@@ -2,7 +2,7 @@ import open3d as o3d
 import numpy as np
 import copy
 
-class PointcloudLoader:
+class ModelLader:
     def __init__(self):
         self.pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(np.empty([0,3])))
         self.pointcloud.normals = o3d.utility.Vector3dVector(np.empty([0,3]))
@@ -19,8 +19,8 @@ class PointcloudLoader:
         self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
 
 
-pointcloudLoader = PointcloudLoader()
-pointcloudLoader.load_spaces(5)
+modelLoader = ModelLoader()
+modelLoader.load_spaces(5)
 
 
-o3d.visualization.draw_geometries([pointcloudLoader.pointcloud], top = 30, left = 0, point_show_normal=True)
+o3d.visualization.draw_geometries([modelLoader.pointcloud], top = 30, left = 0, point_show_normal=True)
