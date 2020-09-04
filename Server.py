@@ -115,7 +115,7 @@ class NetworkDataHandler:
         self.last_data_type_sent = None;
         self.pointcloud = None
         self.registration_manager = RegistrationManager()
-        
+
     def handle_response(self, buffer):
         response = struct.unpack('>h', buffer)
         if response == NetworkResponseType.AllGood.value:
@@ -135,7 +135,7 @@ class NetworkDataHandler:
     def write_PCD(self, pointcloud):
         o3d.io.write_point_cloud("ReceivedPointcloud.pcd", pointcloud, False, False, True)
         print("[PCD_WRITTEN_INTO_FILE]")
-        
+
 
     def handle_point_cloud(self, buffer):
         points_list = ""
@@ -161,10 +161,6 @@ class NetworkDataHandler:
         
         self.write_PCD(self.pointcloud)
         self.registration_manager.execute_registration(self.pointcloud)
-        
-        
-
-        
         
     def handle_network_data(self, conn, addr, data_type, buffer):
         self.conn = conn
