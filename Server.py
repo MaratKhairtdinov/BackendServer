@@ -78,6 +78,7 @@ class RegistrationManager():
 
     def refine_registration(self, source, target, voxel_size, init_transform):        
         distance_threshold = voxel_size * 0.5
+        source = copy.deepcopy(source)
         source.transform(init_transform)
         result = o3d.registration.registration_icp(
                 source, target, distance_threshold, np.identity(4),
@@ -86,11 +87,11 @@ class RegistrationManager():
         print(result)        
         return result
         
-    def execute_registration(self, source):
+    def execute_registration(self, target):
         self.model_loader.load_model(range(0,5)) #appends room geometries as pointclouds to the whole pointcloud
-        target = copy.deepcopy(self.model_loader.pointcloud)
-        target.paint_uniform_color([1,0,0])
-        source.paint_uniform_color([0,1,0])
+        source = copy.deepcopy(self.model_loader.pointcloud)
+        source.paint_uniform_color([1,0,0])
+        target.paint_uniform_color([0,1,0])
         
         self.source = source
         self.target = target
@@ -102,10 +103,12 @@ class RegistrationManager():
         result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)
         
         self.result = result_icp.dot(result_ransac)
+        print(self.result)
         
         source = copy.deepcopy(self.model_loader.pointcloud)
         source.paint_uniform_color([1,0,0])
         self.draw_registration_result(source, target, self.result)
+        
 
 class NetworkDataHandler:
     def __init__(self, server):
@@ -216,7 +219,7 @@ class Server:
                         input_buff.append(chunk)
                         conn.send(struct.pack('>h', NetworkResponseType.AllGood.value))
                         received = True
-                        print(f"Chunk #{i} received")
+                        #print(f"Chunk #{i} received")
                     else:
                         errorLog+="\nChunk #{i} corrupt"
                         conn.send(struct.pack('>h', NetworkResponseType.DataCorrupt.value))                

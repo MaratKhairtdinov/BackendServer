@@ -57,17 +57,20 @@ class RegistrationManager():
                     distance_threshold)
             ], o3d.registration.RANSACConvergenceCriteria(4000000, 500)).transformation
         print(":: Ransac result: ")
+        self.draw_registration_result(source, target, result)
         print(result)        
         return result
 
     def refine_registration(self, source, target, voxel_size, init_transform):        
         distance_threshold = voxel_size * 0.5
+        source = copy.deepcopy(source)
         source.transform(init_transform)
         result = o3d.registration.registration_icp(
                 source, target, distance_threshold, np.identity(4),
                 o3d.registration.TransformationEstimationPointToPlane()).transformation
         print(":: ICP result: ")
-        print(result)        
+        print(result)
+        self.draw_registration_result(source, target, result)
         return result
         
     def execute_registration(self, target):
@@ -75,6 +78,8 @@ class RegistrationManager():
         source = copy.deepcopy(self.model_loader.pointcloud)
         source.paint_uniform_color([1,0,0])
         target.paint_uniform_color([0,1,0])
+        
+        self.draw_registration_result(source, target, np.identity(4))
         
         self.source = source
         self.target = target
@@ -91,8 +96,8 @@ class RegistrationManager():
         source.paint_uniform_color([1,0,0])
         self.draw_registration_result(source, target, self.result)
 
-target = o3d.io.read_point_cloud("ReceivedPointcloud.pcd")
+source = o3d.io.read_point_cloud("ReceivedPointcloud.pcd")
 reg_man = RegistrationManager()
-reg_man.execute_registration(target)
+reg_man.execute_registration(source)
 
 
