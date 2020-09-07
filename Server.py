@@ -9,15 +9,6 @@ import sys
 import traceback
 from enum import Enum
 
-"""
-points_list += f"{struct.unpack_from('f', buffer, offset)[0]} "
-points_list += f"{struct.unpack_from('f', buffer, offset+8)[0]} "
-points_list += f"{struct.unpack_from('f', buffer, offset+4)[0]} " 
-points_list += f"{struct.unpack_from('f', buffer, offset+12)[0]} "
-points_list += f"{struct.unpack_from('f', buffer, offset+20)[0]} "
-points_list += f"{struct.unpack_from('f', buffer, offset+16)[0]}\n"
-"""
-
 class NetworkDataType(Enum):
     Response = 0
     String = 1
@@ -26,105 +17,95 @@ class NetworkDataType(Enum):
 class NetworkResponseType(Enum):
     AllGood=0
     DataCorrupt=1
-    
-class ModelLader:
-    def __init__(self):
+
+class ModelLoader:    
+    def reset(self):
         self.pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(np.empty([0,3])))
         self.pointcloud.normals = o3d.utility.Vector3dVector(np.empty([0,3]))
-        
-    def load_model(self, number):
-        points = np.empty([0,3])
-        normals = np.empty([0,3])
-        for i in range(1, number+1):
-            pointcloud = o3d.io.read_point_cloud(f'EmulatedPointcloud {i}.pcd')
-            points = np.append(points, np.asarray(pointcloud.points), axis = 0)
-            normals = np.append(normals, np.asarray(pointcloud.normals), axis = 0)
-        points = np.array(points)
-        self.pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(points))
-        self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
-    
-class RegistrationManager: 
 
     def __init__(self):
-        ##self.target = o3d.io.read_point_cloud("EmulatedPointcloud.pcd")
-        self.modelLoader = ModelLader()
-        self.modelLoader.load_model(5)
-        self.target = self.modelLoader.pointcloud
+        self.reset()
+        
+    def append_room(self, pointcloud, room_number):
+        loaded_pointcloud = o3d.io.read_point_cloud(f'EmulatedPointcloud {room_number}.pcd')
+        points = np.asarray(pointcloud.points)
+        normals = np.asarray(pointcloud.normals)
+        points = np.append(points, np.asarray(loaded_pointcloud.points), axis = 0)
+        normals = np.append(normals, np.asarray(loaded_pointcloud.normals), axis = 0)
+        pointcloud.points = o3d.utility.Vector3dVector(points)
+        pointcloud.normals = o3d.utility.Vector3dVector(normals)
+        return pointcloud
+        
+    def load_model(self, _range):
+        for i in _range:
+            self.pointcloud = self.append_room(self.pointcloud, i)
+
+class RegistrationManager():
+    def __init__(self):
+        self.model_loader = ModelLoader()
+        
     def draw_registration_result(self, source, target, transformation):
         source_temp = copy.deepcopy(source)
         source_temp.transform(transformation)
-        o3d.visualization.draw_geometries([source_temp, target], top = 30, left = 0, point_show_normal=True)
+        o3d.visualization.draw_geometries([source_temp, target], top = 30, left = 0, point_show_normal=False)
 
-    def preprocess_point_cloud(self, pcd, voxel_size):
-        print(":: Downsample with a voxel size %.3f." % voxel_size)
+    def preprocess_point_cloud(self, pcd, voxel_size):    
         pcd_down = pcd.voxel_down_sample(voxel_size)
-
-        radius_normal = voxel_size * 10
-        print(":: Estimate normal with search radius %.3f." % radius_normal)
-        #pcd_down.estimate_normals(
-        #    o3d.geometry.KDTreeSearchParamHybrid(radius=radius_normal, max_nn=30))
-
-        radius_feature = voxel_size * 10
-        print(":: Compute FPFH feature with search radius %.3f." % radius_feature)
+        radius_feature = voxel_size * 5
         pcd_fpfh = o3d.registration.compute_fpfh_feature(
             pcd_down,
             o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn=100))
         return pcd_down, pcd_fpfh
 
-    def prepare_dataset(self, voxel_size, source, target):
-        print(":: Load two point clouds and disturb initial pose.")
-        trans_init = np.asarray([[0.0, 0.0, 1.0, 0.0],
-                                 [1.0, 0.0, 0.0, 0.0],
-                                 [0.0, 1.0, 0.0, 0.0],
-                                 [0.0, 0.0, 0.0, 1.0]])
-        source.transform(trans_init)
-        #self.draw_registration_result(source, target, np.identity(4))
-
+    def prepare_dataset(self, voxel_size, source, target):    
         source_down, source_fpfh = self.preprocess_point_cloud(source, voxel_size)
         target_down, target_fpfh = self.preprocess_point_cloud(target, voxel_size)
-        return source, target, source_down, target_down, source_fpfh, target_fpfh
+        return source_down, target_down, source_fpfh, target_fpfh
 
-    def execute_global_registration(self, source_down, target_down, source_fpfh,
+    def execute_global_registration(self, source, target, source_fpfh,
                                     target_fpfh, voxel_size):
-        #voxel_size*=5
         distance_threshold = voxel_size * 1.5
-        print(":: RANSAC registration on downsampled point clouds.")
-        print("   Since the downsampling voxel size is %.3f," % voxel_size)
-        print("   we use a liberal distance threshold %.3f." % distance_threshold)
         result = o3d.registration.registration_ransac_based_on_feature_matching(
-            source_down, target_down, source_fpfh, target_fpfh, distance_threshold,
+            source, target, source_fpfh, target_fpfh, distance_threshold,
             o3d.registration.TransformationEstimationPointToPoint(False), 4, [
                 o3d.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
                 o3d.registration.CorrespondenceCheckerBasedOnDistance(
                     distance_threshold)
-            ], o3d.registration.RANSACConvergenceCriteria(4000000, 500))
+            ], o3d.registration.RANSACConvergenceCriteria(4000000, 500)).transformation
+        print(":: Ransac result: ")
+        print(result)        
         return result
 
-
-    def refine_registration(self, source, target, source_fpfh, target_fpfh, voxel_size, init_registration):
-        distance_threshold = voxel_size * 0.4
-        print(":: Point-to-plane ICP registration is applied on original point")
-        print("   clouds to refine the alignment. This time we use a strict")
-        print("   distance threshold %.3f." % distance_threshold)
+    def refine_registration(self, source, target, voxel_size, init_transform):        
+        distance_threshold = voxel_size * 0.5
+        source.transform(init_transform)
         result = o3d.registration.registration_icp(
-            source, target, distance_threshold, init_registration.transformation,
-            o3d.registration.TransformationEstimationPointToPlane())
+                source, target, distance_threshold, np.identity(4),
+                o3d.registration.TransformationEstimationPointToPlane()).transformation
+        print(":: ICP result: ")
+        print(result)        
         return result
         
     def execute_registration(self, source):
+        self.model_loader.load_model(range(0,5)) #appends room geometries as pointclouds to the whole pointcloud
+        target = copy.deepcopy(self.model_loader.pointcloud)
+        target.paint_uniform_color([1,0,0])
+        source.paint_uniform_color([0,1,0])
+        
         self.source = source
-        self.voxel_size = 1 # means 5cm for this dataset
-        self.source, self.target, self.source_down, self.target_down, self.source_fpfh, self.target_fpfh = self.prepare_dataset(self.voxel_size, self.source, self.target)
+        self.target = target
         
-        self.result_ransac = self.execute_global_registration(self.source_down, self.target_down, self.source_fpfh, self.target_fpfh, self.voxel_size)
+        voxel_size = 1        
+        source_down, target_down, source_fpfh, target_fpfh = self.prepare_dataset(voxel_size, self.source, self.target)   
         
-        print(self.result_ransac)
-        #self.draw_registration_result(self.source_down, self.target_down, self.result_ransac.transformation)
-        self.result_icp = self.refine_registration(self.source, self.target, self.source_fpfh, self.target_fpfh, self.voxel_size, self.result_ransac)
+        result_ransac = self.execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)        
+        result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)
         
-        print(self.result_icp)
-        self.draw_registration_result(self.source, self.target, self.result_icp.transformation)
-
+        self.result = result_icp.dot(result_ransac)
+        
+        source = copy.deepcopy(self.model_loader.pointcloud)
+        source.paint_uniform_color([1,0,0])
+        self.draw_registration_result(source, target, self.result)
 
 class NetworkDataHandler:
     def __init__(self, server):
@@ -164,8 +145,8 @@ class NetworkDataHandler:
         response = None
         try:
             for i in range(points_number):
-                points.append([struct.unpack_from('f', buffer, offset)[0],    struct.unpack_from('f', buffer, offset+8)[0],   struct.unpack_from('f', buffer, offset+4)[0]])
-                normals.append([struct.unpack_from('f', buffer, offset+12)[0], struct.unpack_from('f', buffer, offset+20)[0], struct.unpack_from('f', buffer, offset+16)[0]])                
+                points.append([struct.unpack_from('f', buffer, offset)[0],     struct.unpack_from('f', buffer, offset+8)[0],   struct.unpack_from('f', buffer, offset+4)[0]])
+                normals.append([struct.unpack_from('f', buffer, offset+12)[0], struct.unpack_from('f', buffer, offset+20)[0], struct.unpack_from('f', buffer, offset+16)[0]])
                 offset += 24
             response = NetworkResponseType.AllGood
             points   =  np.array(points)
@@ -175,7 +156,7 @@ class NetworkDataHandler:
         #print(f"{np.shape(points)}, {np.shape(normals)}")
         self.server.send_response(self.conn, self.addr, response)
         self.pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(points))
-        self.pointcloud.normals = o3d.utility.Vector3dVector(normals)     
+        self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
         
         self.write_PCD(self.pointcloud)
         self.registration_manager.execute_registration(self.pointcloud)
@@ -210,6 +191,8 @@ class Server:
         conn.send(buffer)
         print("data sent")
 
+    def send_matrix(self, conn, addr, matrix):
+        pass
         
     def send_response(self, conn, addr, response):        
         self.send(conn, addr, NetworkDataType.Response, struct.pack('>h', response.value))
