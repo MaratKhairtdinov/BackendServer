@@ -74,10 +74,15 @@ class RegistrationManager():
         return result
         
     def execute_registration(self, target):
-        self.model_loader.load_model(range(0,5)) #appends room geometries as pointclouds to the whole pointcloud
+        self.model_loader.load_model(range(0,5)) #appends room geometries as pointclouds to the whole pointcloud        
         source = copy.deepcopy(self.model_loader.pointcloud)
         source.paint_uniform_color([1,0,0])
         target.paint_uniform_color([0,1,0])
+        """
+        source.transform(np.array([[1, 0, 0, 0],
+                                        [0, 0,-1, 0],
+                                        [0, 1, 0, 0],
+                                        [0, 0, 0, 1]]))"""
         
         self.draw_registration_result(source, target, np.identity(4))
         
