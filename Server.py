@@ -40,10 +40,13 @@ class ModelLoader:
     def load_model(self, _range):
         for i in _range:
             self.pointcloud = self.append_room(self.pointcloud, i)
+        
 
 class RegistrationManager():
     def __init__(self):
         self.model_loader = ModelLoader()
+        self.model_loader.load_model(range(0,5)) #appends room geometries as pointclouds to the whole pointcloud
+        self.source = copy.deepcopy(self.model_loader.pointcloud)
         
     def draw_registration_result(self, source, target, transformation):
         source_temp = copy.deepcopy(source)
@@ -64,7 +67,8 @@ class RegistrationManager():
         return source_down, target_down, source_fpfh, target_fpfh
 
     def execute_global_registration(self, source, target, source_fpfh,
-                                    target_fpfh, voxel_size):
+                                    target_fpfh, voxel_size):                                   
+        
         distance_threshold = voxel_size * 1.5
         result = o3d.registration.registration_ransac_based_on_feature_matching(
             source, target, source_fpfh, target_fpfh, distance_threshold,
@@ -85,30 +89,29 @@ class RegistrationManager():
                 source, target, distance_threshold, np.identity(4),
                 o3d.registration.TransformationEstimationPointToPlane()).transformation
         print(":: ICP result:")
-        print(result)        
+        print(result)
         return result
         
     def execute_registration(self, target):
-        self.model_loader.load_model(range(0,5)) #appends room geometries as pointclouds to the whole pointcloud
-        source = copy.deepcopy(self.model_loader.pointcloud)
-        source.paint_uniform_color([1,0,0])
-        target.paint_uniform_color([0,1,0])
         
-        self.source = source
+        #self.source.paint_uniform_color([1,0,0])
+        #target.paint_uniform_color([0,1,0])
+        
         self.target = target
         
-        voxel_size = 1        
-        source_down, target_down, source_fpfh, target_fpfh = self.prepare_dataset(voxel_size, self.source, self.target)   
+        self.draw_registration_result(self.source, self.target, np.identity(4))
+        
+        voxel_size = 1
+        source_down, target_down, source_fpfh, target_fpfh = self.prepare_dataset(voxel_size, self.source, self.target)
         
         result_ransac = self.execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
         result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)
         
         self.result = result_icp.dot(result_ransac)
-        print(self.result)
+        print(self.result)       
         
-        source = copy.deepcopy(self.model_loader.pointcloud)
-        source.paint_uniform_color([1,0,0])
-        self.draw_registration_result(source, target, self.result)
+        self.source.paint_uniform_color([1,0,0])
+        self.draw_registration_result(self.source, self.target, self.result)
 
 class NetworkDataHandler:
     def __init__(self, client):
@@ -125,6 +128,24 @@ class NetworkDataHandler:
         elif response == NetworkResponseType.DataCorrupt.value:
             self.client.send(self.last_data_type_sent, self.last_buffer_sent)
             
+    def handle_matrix(self, buffer):
+        matrix = np.identity(4)
+        offset = 0
+        response = None
+        try:
+            for column in range(4):
+                for row in range(4):                                    
+                    number = struct.unpack_from('f', buffer, offset)[0]                    
+                    matrix[column, row] = number            
+                    offset+=4
+            response = NetworkResponseType.AllGood
+            print(matrix)
+        except:
+            response = NetworkResponseType.DataCorrupt
+        self.client.send_response(response)
+        self.registration_manager.source.transform(matrix)
+        
+        
     def handle_string(self, buffer):
         response = None
         try:
@@ -137,7 +158,6 @@ class NetworkDataHandler:
     def write_PCD(self, pointcloud):
         o3d.io.write_point_cloud("ReceivedPointcloud.pcd", pointcloud, False, False, True)
         print("[PCD_WRITTEN_INTO_FILE]")
-
 
     def handle_point_cloud(self, buffer):
         points_list = ""
@@ -156,7 +176,7 @@ class NetworkDataHandler:
             normals  = np.array(normals)
         except Exception:
             response = NetworkResponseType.DataCorrupt
-        
+
         self.client.send_response(response)
         self.pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(points))
         self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
@@ -174,6 +194,8 @@ class NetworkDataHandler:
             self.handle_response(buffer)
         elif data_type == NetworkDataType.PointCloud.value:
             self.handle_point_cloud(buffer)
+        elif data_type == NetworkDataType.Matrix.value:
+            self.handle_matrix(buffer)
         
 
 class InputGateThread(threading.Thread):
@@ -210,22 +232,22 @@ class InputGateThread(threading.Thread):
                     chunk = self.conn.recv(chunk_size)
                     if len(chunk)==chunk_size:
                         input_buff.append(chunk)
-                        self.conn.send(struct.pack('>h', NetworkResponseType.AllGood.value))
+                        self.conn.send(struct.pack('h', NetworkResponseType.AllGood.value))
                         received = True
                         print(f"Chunk #{i} received")
                     else:
                         errorLog+="\nChunk #{i} corrupt"
-                        self.conn.send(struct.pack('>h', NetworkResponseType.DataCorrupt.value))
+                        self.conn.send(struct.pack('h', NetworkResponseType.DataCorrupt.value))
             rest_data = self.conn.recv(residual)
             last_chunk_received = False
             while not last_chunk_received:
                 if len(rest_data)== residual:
                     input_buff.append(rest_data)
-                    self.conn.send(struct.pack('>h', NetworkResponseType.AllGood.value))
+                    self.conn.send(struct.pack('h', NetworkResponseType.AllGood.value))
                     last_chunk_received = True
                 else:
                     errorLog+="\nLast chunk corrupt"
-                    self.conn.send(struct.pack('>h', NetworkResponseType.DataCorrupt.value))            
+                    self.conn.send(struct.pack('h', NetworkResponseType.DataCorrupt.value))            
             input_buff = b''.join(input_buff)
             self.client.network_data_handler.handle_network_data(data_type, input_buff)
             
@@ -267,11 +289,11 @@ class Client:
         buffer = []
         for column in range(matrix.shape[1]):
             for row in range(matrix.shape[0]):
-                buffer.append(struct.pack('d',matrix[row, column]))        
+                buffer.append(struct.pack('d',matrix[row, column]))
         buffer = b''.join(buffer)
         self.output_gate.send(NetworkDataType.Matrix, buffer)
     def send_response(self, response):
-        self.output_gate.send(NetworkDataType.Response, struct.pack('>h', response.value))
+        self.output_gate.send(NetworkDataType.Response, struct.pack('h', response.value))
         print(f"{response.name} sent back")
         
 class Server:
