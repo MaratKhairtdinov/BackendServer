@@ -9,17 +9,23 @@ import sys
 import traceback
 from enum import Enum
 
+class NetworkCommand(Enum):
+    Nothing = 0
+    GlobalRegistration = 1
+    RefineRegistration = 2
+
 class NetworkDataType(Enum):
     Response = 0
     String = 1
     PointCloud = 2
     Matrix = 3
-
+    LoadRoom = 4
+    
 class NetworkResponseType(Enum):
     AllGood=0
     DataCorrupt=1
 
-class ModelLoader:    
+class ModelLoader:
     def reset(self):
         self.pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(np.empty([0,3])))
         self.pointcloud.normals = o3d.utility.Vector3dVector(np.empty([0,3]))
@@ -27,26 +33,27 @@ class ModelLoader:
     def __init__(self):
         self.reset()
         
-    def append_room(self, pointcloud, room_number):
+    def append_room(self, room_number):
         loaded_pointcloud = o3d.io.read_point_cloud(f'EmulatedPointcloud {room_number}.pcd')
-        points = np.asarray(pointcloud.points)
-        normals = np.asarray(pointcloud.normals)
+        points = np.asarray(self.pointcloud.points)
+        normals = np.asarray(self.pointcloud.normals)
         points = np.append(points, np.asarray(loaded_pointcloud.points), axis = 0)
         normals = np.append(normals, np.asarray(loaded_pointcloud.normals), axis = 0)
-        pointcloud.points = o3d.utility.Vector3dVector(points)
-        pointcloud.normals = o3d.utility.Vector3dVector(normals)
-        return pointcloud
+        self.pointcloud.points = o3d.utility.Vector3dVector(points)
+        self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
+        o3d.visualization.draw_geometries([self.pointcloud], top = 30, left = 0, point_show_normal=True)
         
     def load_model(self, _range):
         for i in _range:
-            self.pointcloud = self.append_room(self.pointcloud, i)
+            self.append_room(i)
         
 
 class RegistrationManager():
     def __init__(self):
         self.model_loader = ModelLoader()
-        self.model_loader.load_model(range(0,5)) #appends room geometries as pointclouds to the whole pointcloud
-        self.source = copy.deepcopy(self.model_loader.pointcloud)
+        self.source_initial_transform = np.identity(4)
+        #self.model_loader.load_model(range(0,5)) #appends room geometries as pointclouds to the whole pointcloud
+        #self.source = copy.deepcopy(self.model_loader.pointcloud)
         
     def draw_registration_result(self, source, target, transformation):
         source_temp = copy.deepcopy(source)
@@ -81,7 +88,7 @@ class RegistrationManager():
         print(result)        
         return result
 
-    def refine_registration(self, source, target, voxel_size, init_transform):        
+    def refine_registration(self, source, target, voxel_size, init_transform):
         distance_threshold = voxel_size * 0.5
         source = copy.deepcopy(source)
         source.transform(init_transform)
@@ -92,26 +99,28 @@ class RegistrationManager():
         print(result)
         return result
         
-    def execute_registration(self, target):
-        
-        #self.source.paint_uniform_color([1,0,0])
-        #target.paint_uniform_color([0,1,0])
-        
+    def execute_registration(self, command, target):
+        print(f"Command: {command}")
         self.target = target
-        
-        self.draw_registration_result(self.source, self.target, np.identity(4))
-        
+        self.source = copy.deepcopy(self.model_loader.pointcloud)
+        self.source.transform(self.source_initial_transform)
+        #self.draw_registration_result(self.source, self.target, np.identity(4))
         voxel_size = 1
         source_down, target_down, source_fpfh, target_fpfh = self.prepare_dataset(voxel_size, self.source, self.target)
-        
-        result_ransac = self.execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
+        result_ransac = np.identity(4)        
+        if command == NetworkCommand.GlobalRegistration.value:
+            print("RANSAC")
+            result_ransac = self.execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
+        #self.draw_registration_result(self.source, self.target, result_ransac)
         result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)
         
         self.result = result_icp.dot(result_ransac)
-        print(self.result)       
+        #print(self.result)
         
-        self.source.paint_uniform_color([1,0,0])
-        self.draw_registration_result(self.source, self.target, self.result)
+        self.source.paint_uniform_color([1,0,0])        
+        #self.draw_registration_result(self.source, self.target, self.result)
+        #self.source = copy.deepcopy(self.model_loader.pointcloud)
+        #self.draw_registration_result(self.source, self.target, np.identity(4))
 
 class NetworkDataHandler:
     def __init__(self, client):
@@ -143,7 +152,7 @@ class NetworkDataHandler:
         except:
             response = NetworkResponseType.DataCorrupt
         self.client.send_response(response)
-        self.registration_manager.source.transform(matrix)
+        self.registration_manager.source_initial_transform = matrix
         
         
     def handle_string(self, buffer):
@@ -159,7 +168,7 @@ class NetworkDataHandler:
         o3d.io.write_point_cloud("ReceivedPointcloud.pcd", pointcloud, False, False, True)
         print("[PCD_WRITTEN_INTO_FILE]")
 
-    def handle_point_cloud(self, buffer):
+    def handle_point_cloud(self, command, buffer):
         points_list = ""
         offset = 4
         points_number = struct.unpack_from('i', buffer, 0)[0]
@@ -172,30 +181,35 @@ class NetworkDataHandler:
                 normals.append([struct.unpack_from('f', buffer, offset+12)[0], struct.unpack_from('f', buffer, offset+20)[0], struct.unpack_from('f', buffer, offset+16)[0]])
                 offset += 24
             response = NetworkResponseType.AllGood
-            points   =  np.array(points)
+            points   = np.array(points)
             normals  = np.array(normals)
         except Exception:
             response = NetworkResponseType.DataCorrupt
-
         self.client.send_response(response)
         self.pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(points))
         self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
-        
+
         self.write_PCD(self.pointcloud)
-        self.registration_manager.execute_registration(self.pointcloud)
+        self.registration_manager.execute_registration(command, self.pointcloud)
         self.client.send_matrix(self.registration_manager.result)
         
+    def handle_room_request(self, buffer):
+        print("RoomRequested")
+        self.registration_manager.model_loader.append_room(struct.unpack('i', buffer)[0])
         
-    def handle_network_data(self, data_type, buffer):
+        
+    def handle_network_data(self, command, data_type, buffer):
     
         if data_type == NetworkDataType.String.value:
             self.handle_string(buffer)
         elif data_type == NetworkDataType.Response.value:
             self.handle_response(buffer)
-        elif data_type == NetworkDataType.PointCloud.value:
-            self.handle_point_cloud(buffer)
+        elif data_type == NetworkDataType.PointCloud.value:            
+            self.handle_point_cloud(command, buffer)                
         elif data_type == NetworkDataType.Matrix.value:
             self.handle_matrix(buffer)
+        elif data_type == NetworkDataType.LoadRoom.value:
+            self.handle_room_request(buffer)
         
 
 class InputGateThread(threading.Thread):
@@ -203,7 +217,7 @@ class InputGateThread(threading.Thread):
         self.client = client
         self.IP = ip
         self.PORT = port        
-        self.gate = socket.socket(socket.AF_INET, socket.SOCK_STREAM)        
+        self.gate = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.receiving = True
         threading.Thread.__init__(self)
         
@@ -220,6 +234,8 @@ class InputGateThread(threading.Thread):
     def receive(self):        
         while self.receiving:
             input_buff = []
+            command = struct.unpack('>h', self.conn.recv(2))[0]
+            print(command)
             data_type  = struct.unpack('>h', self.conn.recv(2))[0]
             chunk_size = struct.unpack('>i', self.conn.recv(4))[0]
             chunks     = struct.unpack('>i', self.conn.recv(4))[0]
@@ -249,7 +265,7 @@ class InputGateThread(threading.Thread):
                     errorLog+="\nLast chunk corrupt"
                     self.conn.send(struct.pack('h', NetworkResponseType.DataCorrupt.value))            
             input_buff = b''.join(input_buff)
-            self.client.network_data_handler.handle_network_data(data_type, input_buff)
+            self.client.network_data_handler.handle_network_data(command, data_type, input_buff)
             
             
 class OutputGateThread(threading.Thread):
@@ -310,6 +326,3 @@ OUTPUT_PORT = 5000
 
 server = Server(HOST, INPUT_PORT, OUTPUT_PORT)
 server.start_clients()
-
-          
-            

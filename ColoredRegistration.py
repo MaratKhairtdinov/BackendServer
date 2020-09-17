@@ -31,7 +31,7 @@ class RegistrationManager():
     def draw_registration_result(self, source, target, transformation):
         source_temp = copy.deepcopy(source)
         source_temp.transform(transformation)
-        o3d.visualization.draw_geometries([source_temp, target], top = 30, left = 0, point_show_normal=False)
+        o3d.visualization.draw_geometries([source_temp, target], top = 30, left = 0, point_show_normal=True)
 
     def preprocess_point_cloud(self, pcd, voxel_size):    
         pcd_down = pcd.voxel_down_sample(voxel_size)
@@ -74,7 +74,7 @@ class RegistrationManager():
         return result
         
     def execute_registration(self, target):
-        self.model_loader.load_model(range(0,5)) #appends room geometries as pointclouds to the whole pointcloud        
+        self.model_loader.load_model(range(1,6)) #appends room geometries as pointclouds to the whole pointcloud        
         source = copy.deepcopy(self.model_loader.pointcloud)
         #source.paint_uniform_color([1,0,0])
         #target.paint_uniform_color([0,1,0])
