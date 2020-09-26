@@ -10,19 +10,48 @@ class ModelLoader:
     def __init__(self):
         self.reset()
         
-    def append_room(self, pointcloud, room_number):
-        loaded_pointcloud = o3d.io.read_point_cloud(f'EmulatedPointcloud {room_number}.pcd')
-        points = np.asarray(pointcloud.points)
-        normals = np.asarray(pointcloud.normals)
+    def append_room(self, file_name):
+        loaded_pointcloud = o3d.io.read_point_cloud(file_name)
+        points = np.asarray(self.pointcloud.points)
+        normals = np.asarray(self.pointcloud.normals)
         points = np.append(points, np.asarray(loaded_pointcloud.points), axis = 0)
         normals = np.append(normals, np.asarray(loaded_pointcloud.normals), axis = 0)
-        pointcloud.points = o3d.utility.Vector3dVector(points)
-        pointcloud.normals = o3d.utility.Vector3dVector(normals)
-        return pointcloud
+        self.pointcloud.points = o3d.utility.Vector3dVector(points)
+        self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
+        
+    def append_pointcloud(self, pointcloud):
+        points = np.asarray(self.pointcloud.points)
+        normals = np.asarray(self.pointcloud.normals)
+        points = np.append(points, np.asarray(pointcloud.points), axis = 0)
+        normals = np.append(normals, np.asarray(pointcloud.normals), axis = 0)
+        self.pointcloud.points = o3d.utility.Vector3dVector(points)
+        self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
+        
+    def horisontal_crop(self, pointcloud, height):
+        newPointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(np.empty([0,3])))
+        newPointcloud.normals = o3d.utility.Vector3dVector(np.empty([0,3]))
+        new_points = []
+        new_normals = []
+        
+        old_points = np.asarray(pointcloud.points)
+        old_normals = np.asarray(pointcloud.normals)
+        
+        for i in range(old_points.shape[0]):
+            if old_points[i,2]>height:
+                new_points.append(old_points[i,:])
+                new_normals.append(old_normals[i,:])
+                
+        newPointcloud.points = o3d.utility.Vector3dVector(np.array(new_points))
+        newPointcloud.normals = o3d.utility.Vector3dVector(np.array(new_normals))
         
     def load_model(self, _range):
         for i in _range:
-            self.pointcloud = self.append_room(self.pointcloud, i)
+            self.append_room(f"EmulatedPointcloud {i}.pcd")
+        
+        
+            
+    
+        
 
 class RegistrationManager():
     def __init__(self):
@@ -78,12 +107,7 @@ class RegistrationManager():
         source = copy.deepcopy(self.model_loader.pointcloud)
         #source.paint_uniform_color([1,0,0])
         #target.paint_uniform_color([0,1,0])
-        """
-        source.transform(np.array([[1, 0, 0, 0],
-                                        [0, 0,-1, 0],
-                                        [0, 1, 0, 0],
-                                        [0, 0, 0, 1]]))"""
-        
+
         self.draw_registration_result(source, target, np.identity(4))
         
         self.source = source
@@ -97,12 +121,23 @@ class RegistrationManager():
         
         self.result = result_icp.dot(result_ransac)
         
-        source = copy.deepcopy(self.model_loader.pointcloud)
-        source.paint_uniform_color([1,0,0])
-        self.draw_registration_result(source, target, self.result)
+        #registered_source = copy.deepcopy(self.target)
+        #registered_source.transform(self.result)
+        
+        self.model_loader.append_pointcloud(registered_source)
+        o3d.io.write_point_cloud("CombinedPointcloud.pcd", reg_man.model_loader.pointcloud, False, False, True)
+        
+        #source = copy.deepcopy(self.model_loader.pointcloud)
+        #source.paint_uniform_color([1,0,0])
+        #self.draw_registration_result(source, target, self.result)
+        
 
-source = o3d.io.read_point_cloud("ReceivedPointcloud.pcd")
+        
+
+source = o3d.io.read_point_cloud("FilteredPointcloud.pcd")
 reg_man = RegistrationManager()
 reg_man.execute_registration(source)
+
+#o3d.io.write_point_cloud("CombinedPointcloud.pcd", reg_man.model_loader.pointcloud, False, False, True)
 
 

@@ -33,19 +33,21 @@ class ModelLoader:
     def __init__(self):
         self.reset()
         
-    def append_room(self, room_number):
-        loaded_pointcloud = o3d.io.read_point_cloud(f'EmulatedPointcloud {room_number}.pcd')
+        
+    def append_pointcloud(self, file_name):
+        loaded_pointcloud = o3d.io.read_point_cloud(file_name)
         points = np.asarray(self.pointcloud.points)
         normals = np.asarray(self.pointcloud.normals)
         points = np.append(points, np.asarray(loaded_pointcloud.points), axis = 0)
         normals = np.append(normals, np.asarray(loaded_pointcloud.normals), axis = 0)
         self.pointcloud.points = o3d.utility.Vector3dVector(points)
-        self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
-        o3d.visualization.draw_geometries([self.pointcloud], top = 30, left = 0, point_show_normal=True)
+        self.pointcloud.normals = o3d.utility.Vector3dVector(normals)        
         
+        #o3d.visualization.draw_geometries([self.pointcloud], top = 30, left = 0, point_show_normal=True)
+    
     def load_model(self, _range):
         for i in _range:
-            self.append_room(i)
+            self.append_pointcloud(i)
         
 
 class RegistrationManager():
@@ -67,15 +69,35 @@ class RegistrationManager():
             pcd_down,
             o3d.geometry.KDTreeSearchParamHybrid(radius=radius_feature, max_nn=100))
         return pcd_down, pcd_fpfh
+        
+    def horisontal_crop(self, pointcloud, height):
+        newPointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(np.empty([0,3])))
+        newPointcloud.normals = o3d.utility.Vector3dVector(np.empty([0,3]))
+        new_points = []
+        new_normals = []
+        
+        old_points = np.asarray(pointcloud.points)
+        old_normals = np.asarray(pointcloud.normals)
+        
+        for i in range(old_points.shape[0]):
+            if old_points[i,2]<height:
+                new_points.append(old_points[i,:])
+                new_normals.append(old_normals[i,:])
+                
+        newPointcloud.points = o3d.utility.Vector3dVector(np.array(new_points))
+        newPointcloud.normals = o3d.utility.Vector3dVector(np.array(new_normals))  
+        
+        return newPointcloud
 
-    def prepare_dataset(self, voxel_size, source, target):    
+    def prepare_dataset(self, voxel_size, source, target):
+        #self.draw_registration_result(source, target, np.identity(4))
+        
         source_down, source_fpfh = self.preprocess_point_cloud(source, voxel_size)
         target_down, target_fpfh = self.preprocess_point_cloud(target, voxel_size)
         return source_down, target_down, source_fpfh, target_fpfh
 
     def execute_global_registration(self, source, target, source_fpfh,
-                                    target_fpfh, voxel_size):                                   
-        
+                                    target_fpfh, voxel_size):
         distance_threshold = voxel_size * 1.5
         result = o3d.registration.registration_ransac_based_on_feature_matching(
             source, target, source_fpfh, target_fpfh, distance_threshold,
@@ -101,25 +123,29 @@ class RegistrationManager():
         
     def execute_registration(self, command, target):
         print(f"Command: {command}")
-        self.target = target
+        self.target = copy.deepcopy(target)
         self.source = copy.deepcopy(self.model_loader.pointcloud)
+        
+        source = self.horisontal_crop(self.source, 1.5)
+        target = self.horisontal_crop(target, 1.5)
+        
         self.source.transform(self.source_initial_transform)
-        #self.draw_registration_result(self.source, self.target, np.identity(4))
-        voxel_size = 1
-        source_down, target_down, source_fpfh, target_fpfh = self.prepare_dataset(voxel_size, self.source, self.target)
-        result_ransac = np.identity(4)        
+        source.transform(self.source_initial_transform)
+        #self.draw_registration_result(source, target, np.identity(4))
+        voxel_size = .7
+        source_down, target_down, source_fpfh, target_fpfh = self.prepare_dataset(voxel_size, source, target)
+        result_ransac = np.identity(4)
         if command == NetworkCommand.GlobalRegistration.value:
             print("RANSAC")
             result_ransac = self.execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
-        #self.draw_registration_result(self.source, self.target, result_ransac)
-        result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)
-        
+            #self.draw_registration_result(source, target, result_ransac)
+        result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)        
         self.result = result_icp.dot(result_ransac)
         #print(self.result)
         
-        self.source.paint_uniform_color([1,0,0])        
+        self.source.paint_uniform_color([1,0,0])
         #self.draw_registration_result(self.source, self.target, self.result)
-        #self.source = copy.deepcopy(self.model_loader.pointcloud)
+        self.source = copy.deepcopy(self.model_loader.pointcloud)
         #self.draw_registration_result(self.source, self.target, np.identity(4))
 
 class NetworkDataHandler:
@@ -195,8 +221,14 @@ class NetworkDataHandler:
         
     def handle_room_request(self, buffer):
         print("RoomRequested")
-        self.registration_manager.model_loader.append_room(struct.unpack('i', buffer)[0])
-        
+        response = None
+        try:
+            self.registration_manager.model_loader.append_pointcloud(f"EmulatedPointcloud {struct.unpack('i', buffer)[0]}.pcd")
+            response = NetworkResponseType.AllGood
+        except Exception:
+            response = NetworkResponseType.AllGood
+            print("Room Load FAILED")
+        self.client.send_response(response)
         
     def handle_network_data(self, command, data_type, buffer):
     
