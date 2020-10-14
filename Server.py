@@ -41,14 +41,13 @@ class ModelLoader:
         points = np.append(points, np.asarray(loaded_pointcloud.points), axis = 0)
         normals = np.append(normals, np.asarray(loaded_pointcloud.normals), axis = 0)
         self.pointcloud.points = o3d.utility.Vector3dVector(points)
-        self.pointcloud.normals = o3d.utility.Vector3dVector(normals)        
-        
+        self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
         #o3d.visualization.draw_geometries([self.pointcloud], top = 30, left = 0, point_show_normal=True)
     
     def load_model(self, _range):
         for i in _range:
             self.append_pointcloud(i)
-        
+
 
 class RegistrationManager():
     def __init__(self):
@@ -85,13 +84,12 @@ class RegistrationManager():
                 new_normals.append(old_normals[i,:])
                 
         newPointcloud.points = o3d.utility.Vector3dVector(np.array(new_points))
-        newPointcloud.normals = o3d.utility.Vector3dVector(np.array(new_normals))  
+        newPointcloud.normals = o3d.utility.Vector3dVector(np.array(new_normals))
         
         return newPointcloud
 
     def prepare_dataset(self, voxel_size, source, target):
-        #self.draw_registration_result(source, target, np.identity(4))
-        
+        #self.draw_registration_result(source, target, np.identity(4))        
         source_down, source_fpfh = self.preprocess_point_cloud(source, voxel_size)
         target_down, target_fpfh = self.preprocess_point_cloud(target, voxel_size)
         return source_down, target_down, source_fpfh, target_fpfh
@@ -126,11 +124,18 @@ class RegistrationManager():
         self.target = copy.deepcopy(target)
         self.source = copy.deepcopy(self.model_loader.pointcloud)
         
-        source = self.horisontal_crop(self.source, 1.5)
-        target = self.horisontal_crop(target, 1.5)
+        source = copy.deepcopy(self.source)
+        target = copy.deepcopy(target)
         
+        if command == NetworkCommand.GlobalRegistration.value:
+            source = self.horisontal_crop(source, 0.5)
+            target = self.horisontal_crop(target,      0.5)        
+            source.transform(self.source_initial_transform)
+            
         self.source.transform(self.source_initial_transform)
-        source.transform(self.source_initial_transform)
+        #self.draw_registration_result(self.source, target, np.identity(4))
+        
+        #source.transform(self.source_initial_transform)
         #self.draw_registration_result(source, target, np.identity(4))
         voxel_size = .7
         source_down, target_down, source_fpfh, target_fpfh = self.prepare_dataset(voxel_size, source, target)
@@ -140,21 +145,22 @@ class RegistrationManager():
             result_ransac = self.execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
             #self.draw_registration_result(source, target, result_ransac)
         result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)        
-        self.result = result_icp.dot(result_ransac)
-        #print(self.result)
+        self.result = result_icp.dot(result_ransac)        
         
         self.source.paint_uniform_color([1,0,0])
         #self.draw_registration_result(self.source, self.target, self.result)
         self.source = copy.deepcopy(self.model_loader.pointcloud)
         #self.draw_registration_result(self.source, self.target, np.identity(4))
 
-class NetworkDataHandler:
+class InputDataHandler:
     def __init__(self, client):
         self.client = client
         self.last_buffer_sent = None;
         self.last_data_type_sent = None;
         self.pointcloud = None
         self.registration_manager = RegistrationManager()
+        self.points  = []
+        self.normals = []
 
     def handle_response(self, buffer):
         response = struct.unpack('>h', buffer)
@@ -197,28 +203,28 @@ class NetworkDataHandler:
     def handle_point_cloud(self, command, buffer):
         points_list = ""
         offset = 4
-        points_number = struct.unpack_from('i', buffer, 0)[0]
-        points  = []
-        normals = []
+        points_number = struct.unpack_from('i', buffer, 0)[0]        
         response = None
+        points_ = None
+        normals_ = None
         try:
             for i in range(points_number):
-                points.append([struct.unpack_from('f', buffer, offset)[0],     struct.unpack_from('f', buffer, offset+8)[0],   struct.unpack_from('f', buffer, offset+4)[0]])
-                normals.append([struct.unpack_from('f', buffer, offset+12)[0], struct.unpack_from('f', buffer, offset+20)[0], struct.unpack_from('f', buffer, offset+16)[0]])
+                self.points.append([struct.unpack_from('f', buffer, offset)[0],     struct.unpack_from('f', buffer, offset+8)[0],   struct.unpack_from('f', buffer, offset+4)[0]])
+                self.normals.append([struct.unpack_from('f', buffer, offset+12)[0], struct.unpack_from('f', buffer, offset+20)[0], struct.unpack_from('f', buffer, offset+16)[0]])
                 offset += 24
-            response = NetworkResponseType.AllGood
-            points   = np.array(points)
-            normals  = np.array(normals)
+            response  = NetworkResponseType.AllGood
+            points_   = np.array(self.points)
+            normals_  = np.array(self.normals)
         except Exception:
             response = NetworkResponseType.DataCorrupt
         self.client.send_response(response)
-        self.pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(points))
-        self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
+        self.pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(points_))
+        self.pointcloud.normals = o3d.utility.Vector3dVector(normals_)
 
         self.write_PCD(self.pointcloud)
         self.registration_manager.execute_registration(command, self.pointcloud)
         self.client.send_matrix(self.registration_manager.result)
-        
+
     def handle_room_request(self, buffer):
         print("RoomRequested")
         response = None
@@ -226,12 +232,11 @@ class NetworkDataHandler:
             self.registration_manager.model_loader.append_pointcloud(f"EmulatedPointcloud {struct.unpack('i', buffer)[0]}.pcd")
             response = NetworkResponseType.AllGood
         except Exception:
-            response = NetworkResponseType.AllGood
+            response = NetworkResponseType.DataCorrupt
             print("Room Load FAILED")
         self.client.send_response(response)
-        
-    def handle_network_data(self, command, data_type, buffer):
-    
+
+    def handle_network_data(self, command, data_type, buffer):    
         if data_type == NetworkDataType.String.value:
             self.handle_string(buffer)
         elif data_type == NetworkDataType.Response.value:
@@ -244,7 +249,7 @@ class NetworkDataHandler:
             self.handle_room_request(buffer)
         
 
-class InputGateThread(threading.Thread):
+class InputGate(threading.Thread):
     def __init__(self, client, ip, port):
         self.client = client
         self.IP = ip
@@ -297,10 +302,10 @@ class InputGateThread(threading.Thread):
                     errorLog+="\nLast chunk corrupt"
                     self.conn.send(struct.pack('h', NetworkResponseType.DataCorrupt.value))            
             input_buff = b''.join(input_buff)
-            self.client.network_data_handler.handle_network_data(command, data_type, input_buff)
+            self.client.input_data_handler.handle_network_data(command, data_type, input_buff)
             
             
-class OutputGateThread(threading.Thread):
+class OutputGate(threading.Thread):
     def __init__(self, client, ip, port):
         self.client = client
         self.IP = ip
@@ -324,13 +329,13 @@ class OutputGateThread(threading.Thread):
         self.conn.send(buffer)
         print(f"data sent {data_type.value}, buffer length: {len(buffer)}")
         
-class Client:
+class ClientHandler:
     def __init__(self, HOST, INPUT_PORT, OUTPUT_PORT):
         print("[STARTING SERVER]")
-        self.input_gate = InputGateThread(self, HOST, INPUT_PORT)
-        self.output_gate = OutputGateThread(self, HOST ,OUTPUT_PORT)
-        self.network_data_handler = NetworkDataHandler(self)
-    def start(self):        
+        self.input_gate = InputGate(self, HOST, INPUT_PORT)
+        self.output_gate = OutputGate(self, HOST ,OUTPUT_PORT)
+        self.input_data_handler = InputDataHandler(self)
+    def start(self):
         self.input_gate.start()
         self.output_gate.start()        
     def send_matrix(self, matrix):
@@ -346,7 +351,7 @@ class Client:
         
 class Server:
     def __init__(self, HOST, INPUT_PORT, OUTPUT_PORT):
-        self.client = Client(HOST, INPUT_PORT, OUTPUT_PORT)
+        self.client = ClientHandler(HOST, INPUT_PORT, OUTPUT_PORT)
     def start_clients(self):
         self.client.start()
         
