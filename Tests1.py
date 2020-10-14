@@ -8,11 +8,11 @@ class PlaneSegmenter:
         self.outliers = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(np.empty([0,3])))
     
     def extract_planes(self, pointcloud):
-        plane_model, inlier_indeces = pointcloud.segment_plane(distance_threshold = 0.05, ransac_n = 3, num_iterations = 1000)
+        plane_model, inlier_indeces = pointcloud.segment_plane(distance_threshold = 0.1, ransac_n = 3, num_iterations = 1000)
         self.inliers+=pointcloud.select_by_index(inlier_indeces)
         self.outliers=pointcloud.select_by_index(inlier_indeces, invert=True)
         
-pointcloud = o3d.io.read_point_cloud("ReceivedPointcloud.pcd")
+pointcloud = o3d.io.read_point_cloud("FilteredPointcloud.pcd")
 plane_segmenter = PlaneSegmenter()
 plane_segmenter.extract_planes(pointcloud)
 plane_segmenter.extract_planes(plane_segmenter.outliers)

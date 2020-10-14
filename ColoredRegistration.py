@@ -65,8 +65,6 @@ class ModelLoader:
     def load_model(self, _range):
         for i in _range:
             self.append_pointcloud(f"EmulatedPointcloud {i}.pcd")
-        
-        
 
 class RegistrationManager():
     def __init__(self):
@@ -120,7 +118,7 @@ class RegistrationManager():
     def execute_global_registration(self, source, target, source_fpfh,
                                     target_fpfh, voxel_size):
                                     
-        self.draw_registration_result(source, target, np.identity(4))
+        #self.draw_registration_result(source, target, np.identity(4))
         distance_threshold = voxel_size * 1.5
         result = o3d.registration.registration_ransac_based_on_feature_matching(
             source, target, source_fpfh, target_fpfh, distance_threshold,
@@ -129,7 +127,7 @@ class RegistrationManager():
                 o3d.registration.CorrespondenceCheckerBasedOnDistance(
                     distance_threshold)
             ], o3d.registration.RANSACConvergenceCriteria(4000000, 500)).transformation
-        self.draw_registration_result(source, target, result)
+        #self.draw_registration_result(source, target, result)
         print(":: Ransac result: ")
         print(result)
         return result
@@ -147,6 +145,8 @@ class RegistrationManager():
         
     def execute_registration(self, target):
         
+        full_scan = o3d.io.read_point_cloud("ReceivedPointcloud.pcd")
+        
         self.target = copy.deepcopy(target)
         self.source = copy.deepcopy(self.model_loader.pointcloud)
         
@@ -154,28 +154,28 @@ class RegistrationManager():
         self.source.paint_uniform_color([0,0,1])
         
         self.source.transform(np.array([[1,0,0,10],[0,1,0,0],[0,0,1,-.6],[0,0,0,1],]))
-        self.draw_registration_result(self.source, self.target, np.identity(4))
-        
-        #source = self.horisontal_crop(self.source, .5)
-        #target = self.horisontal_crop(target, .5)
-        
+        #self.draw_registration_result(self.source, self.target, np.identity(4))
+
         self.source.transform(self.source_initial_transform)
-        #source.transform(self.source_initial_transform)
-        
+
         voxel_size = 1
         source_down, target_down, source_fpfh, target_fpfh = self.prepare_dataset(voxel_size, self.source, self.target)
         result_ransac = self.execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
+
+        ransac_result = o3d.registration.evaluate_registration(self.source, full_scan, voxel_size*1, result_ransac)
         
-        self.draw_registration_result(self.source, self.target, result_ransac)
-                
-        result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)        
+        result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)
         self.result = result_icp.dot(result_ransac)
         
+        final_result = o3d.registration.evaluate_registration(self.source, full_scan, voxel_size*1, self.result)
+        
+        print(f"::RANSAC RMSE: {ransac_result.inlier_rmse}")
+        print(f"::Refinement RMSE: {final_result.inlier_rmse}")
         
         self.draw_registration_result(self.source, self.target, self.result)
         self.source = copy.deepcopy(self.model_loader.pointcloud)
-        #self.draw_registration_result(self.source, self.target, np.identity(4))
+        
         
 reg_man = RegistrationManager()
-reg_man.execute_registration(o3d.io.read_point_cloud("FilteredPointcloud.pcd"))
+reg_man.execute_registration(o3d.io.read_point_cloud("ReceivedPointcloud.pcd"))
 
