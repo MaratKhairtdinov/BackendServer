@@ -44,8 +44,6 @@ class ModelLoader:
         for i in _range:
             self.pointcloud = self.append_room(self.pointcloud, i)
         #self.pointcloud = self.horisontal_crop(self.pointcloud, 1.5)
-
-    
             
     def segment_planes(self):
         plane_model, inliers = self.pointcloud.segment_plane(distance_threshold=0.02,
@@ -60,11 +58,11 @@ class ModelLoader:
         #o3d.visualization.draw_geometries([inlier_cloud, outlier_cloud], top = 30, left = 0, point_show_normal=False)
 
 modelLoader = ModelLoader()
-modelLoader.load_spaces(range(1,13))
+modelLoader.load_spaces(range(2,3))
 modelLoader.pointcloud.paint_uniform_color([0,0,1])
 o3d.visualization.draw_geometries([modelLoader.pointcloud], top = 30, left = 0, point_show_normal=False)
 
-pointcloud = o3d.io.read_point_cloud("ReceivedPointcloud.pcd")
+pointcloud = o3d.io.read_point_cloud("ReceivedPointcloud_1.pcd")
 pointcloud.paint_uniform_color([0,1,0])
 #pointcloud = pointcloud.voxel_down_sample(1)
 o3d.visualization.draw_geometries([pointcloud], top = 30, left = 0, point_show_normal=False)

@@ -129,7 +129,7 @@ class RegistrationManager():
         
         if command == NetworkCommand.GlobalRegistration.value:
             source = self.horisontal_crop(source, 0.5)
-            target = self.horisontal_crop(target,      0.5)        
+            target = self.horisontal_crop(target, 0.5)
             source.transform(self.source_initial_transform)
             
         self.source.transform(self.source_initial_transform)
@@ -161,6 +161,7 @@ class InputDataHandler:
         self.registration_manager = RegistrationManager()
         self.points  = []
         self.normals = []
+        self.counter = 0
 
     def handle_response(self, buffer):
         response = struct.unpack('>h', buffer)
@@ -170,6 +171,7 @@ class InputDataHandler:
             self.client.send(self.last_data_type_sent, self.last_buffer_sent)
             
     def handle_matrix(self, buffer):
+        self.counter+=1
         matrix = np.identity(4)
         offset = 0
         response = None
@@ -180,6 +182,7 @@ class InputDataHandler:
                     matrix[column, row] = number            
                     offset+=4
             response = NetworkResponseType.AllGood
+            np.save(f"InitialTransform{self.counter}.npy", matrix)
             print(matrix)
         except:
             response = NetworkResponseType.DataCorrupt
@@ -197,7 +200,7 @@ class InputDataHandler:
         self.client.send_response(response)
 
     def write_PCD(self, pointcloud):
-        o3d.io.write_point_cloud("ReceivedPointcloud.pcd", pointcloud, False, False, True)
+        o3d.io.write_point_cloud(f"ReceivedPointcloud{self.counter}.pcd", pointcloud, False, False, True)
         print("[PCD_WRITTEN_INTO_FILE]")
 
     def handle_point_cloud(self, command, buffer):
