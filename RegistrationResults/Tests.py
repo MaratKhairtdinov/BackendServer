@@ -16,8 +16,6 @@ img_path = f"C:/Users/Marat/Documents/Thesis/BackendServer/RegistrationResults/S
 class RegistrationManager():
     def __init__(self):
         pass
-        #self.model_loader.load_model(range(0,5)) #appends room geometries as pointclouds to the whole pointcloud
-        #self.source = copy.deepcopy(self.model_loader.pointcloud)
         
     def draw_registration_result(self, source, target, transformation):
         source_temp = copy.deepcopy(source)
@@ -62,60 +60,50 @@ class RegistrationManager():
 
     def execute_global_registration(self, source, target, source_fpfh,
                                     target_fpfh, voxel_size):
-                                    
-        #self.draw_registration_result(source, target, np.identity(4))
         distance_threshold = voxel_size * 1.5
+        registration_time = time.time()
         result = o3d.registration.registration_ransac_based_on_feature_matching(
             source, target, source_fpfh, target_fpfh, distance_threshold,
             o3d.registration.TransformationEstimationPointToPoint(False), 4, [
                 o3d.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
                 o3d.registration.CorrespondenceCheckerBasedOnDistance(
                     distance_threshold)
-            ], o3d.registration.RANSACConvergenceCriteria(4000000, 500)).transformation
-        #self.draw_registration_result(source, target, result)
-        print(":: Ransac result: ")
-        print(result)
-        return result
+            ], o3d.registration.RANSACConvergenceCriteria(4000000, 500))
+        return result, time.time()-registration_time
 
     def refine_registration(self, source, target, voxel_size, init_transform):
         distance_threshold = voxel_size * 0.5
         source = copy.deepcopy(source)
         source.transform(init_transform)
+        
+        registration_time = time.time()
         result = o3d.registration.registration_icp(
                 source, target, distance_threshold, np.identity(4),
-                o3d.registration.TransformationEstimationPointToPlane()).transformation
-        print(":: ICP result:")
-        print(result)
-        return result
+                o3d.registration.TransformationEstimationPointToPoint())        
+        return result, time.time()-registration_time
         
     def execute_registration(self, source, target):
-        
-        #self.source_initial_transform = source_initial_transform
-        
         self.target = copy.deepcopy(target)
-        self.source = copy.deepcopy(source)       
-
-        #self.source.transform(self.source_initial_transform)
+        self.source = copy.deepcopy(source)
 
         voxel_size = 1
         source_down, target_down, source_fpfh, target_fpfh = self.prepare_dataset(voxel_size, self.source, self.target)
-        result_ransac = self.execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
 
-        #ransac_result = o3d.registration.evaluate_registration(self.source, full_scan, voxel_size*1, result_ransac)
-        
-        result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)
-        self.result = result_icp.dot(result_ransac)
-        
-        #final_result = o3d.registration.evaluate_registration(self.source, self.target, voxel_size*1, self.result) 
-        
-        return self.result
+        result_ransac, ransac_time = self.execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
+
+        ransac_rmse = o3d.registration.evaluate_registration(self.source, self.target, voxel_size*1, result_ransac.transformation).inlier_rmse
+
+        result_icp, icp_time = self.refine_registration(self.source, self.target, voxel_size, result_ransac.transformation)
+        self.result = result_icp.transformation.dot(result_ransac.transformation)
+
+        return self.result, ransac_rmse, result_icp.inlier_rmse, ransac_time, icp_time
 
 
 def filter_pointcloud(pointcloud, path):
-    show_normals = False        
+    show_normals = False
 
     points = np.asarray(pointcloud.points)
-    normals= np.asarray(pointcloud.normals)    
+    normals= np.asarray(pointcloud.normals)
 
     normals_sphere = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(normals))
     normals_sphere.normals = o3d.utility.Vector3dVector(points)
@@ -133,21 +121,18 @@ def filter_pointcloud(pointcloud, path):
     filtered_sphere = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(filtered_normals))
     filtered_sphere.normals = o3d.utility.Vector3dVector(filtered_points)
 
-#    o3d.visualization.draw_geometries([normals_sphere],  top = 30, left = 0, point_show_normal=False)
-#    o3d.visualization.draw_geometries([filtered_sphere], top = 30, left = 0, point_show_normal=False)
-
     filtered_pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(filtered_points))
     filtered_pointcloud.normals = o3d.utility.Vector3dVector(filtered_normals)
 
     o3d.io.write_point_cloud(path, filtered_pointcloud, False, False, True)
-#    o3d.visualization.draw_geometries([filtered_pointcloud], top = 30, left = 0, point_show_normal=show_normals)
+
 
 
 def draw_registration_result(source, target, transformation, image_number):    
     source_temp = copy.deepcopy(source)
     target_temp = copy.deepcopy(target)
     source_temp.transform(transformation)        
-    #o3d.visualization.draw_geometries([source_temp, target_temp], top = 30, left = 0, point_show_normal=False)
+
     vis = o3d.visualization.Visualizer()
     vis.poll_events()
     vis.create_window()
@@ -155,52 +140,51 @@ def draw_registration_result(source, target, transformation, image_number):
     vis.add_geometry(target)
     vis.run()
     vis.capture_screen_image(img_path+f"image_{image_number}.jpg")
-    vis.close()    
+    vis.close()
     vis.destroy_window()
-    
+
 reg_man = RegistrationManager()
 
-table = [list(range(1,11))]
-counter = 0
-for folder_number in range(1,5):
-    column = []
-    folder_path = f"C:/Users/Marat/Documents/Thesis/BackendServer/RegistrationResults/{folder_number}Rooms/"
-    for number in range(1,100):
-        counter+=1       
+number_of_tests = 1000
 
+
+table = []
+counter = 0
+
+for number in range(1, number_of_tests):
+    row = []
+    for folder_number in range(1,5):
+        counter+=1
+        folder_path = f"D:/Marat/Thesis/Thesis/BackendServer/RegistrationResults/{folder_number}Rooms/"
         source = o3d.io.read_point_cloud(folder_path+f"Source.pcd")
         target = o3d.io.read_point_cloud(folder_path+f"Target.pcd")
         
         init_transform   = np.load(folder_path+f"InitialTransform.npy")
-        
         source.transform(init_transform)
         
-        result_transform = reg_man.execute_registration(source, target)
+        result_transform, ransac_rmse, icp_rmse, ransac_time, icp_time = reg_man.execute_registration(source, target)
         
-        np.save(folder_path+f"ResultTransform{number}.npy", result_transform)
-        
-        #draw_registration_result(source, target, init_transform, counter)
-        
-        #target = o3d.io.read_point_cloud(folder_path+f"Target{number}.pcd")
-        
-        #source.transform(result_transform)
-        
-        #draw_registration_result(source, target, init_transform, counter)
-        #draw_registration_result(source, target, result_transform, counter)
-        
-        reg_result = o3d.registration.evaluate_registration(source, target, 20, np.identity(4))
-        print(f"::Registration RMSE: {reg_result.inlier_rmse}")
-        
-        column.append(reg_result.inlier_rmse)
-    table.append(column)
+        row.append(ransac_rmse)
+        row.append(ransac_time)
+        row.append(icp_rmse)
+        row.append(icp_time)
+
+    table.append(row)
+    print(f"Text# {number}")
+
 table = np.asarray(table)
-print((table))
-table = np.transpose(table)
+print(len(table))
+print(len(table[0]))
 
+print(np.shape(table))
+print(table)
 
-df = pd.DataFrame(table, columns = ["Test#" , "One Room", "Two Rooms", "Three Rooms", "Four Rooms"])
+def save_histogram(column):
+    plt.hist(column)
+    plt.show()
+df = pd.DataFrame(table, columns = ["One Room RANSAC", "Time", "One Room Refined", "Time", "Two Rooms RANSAC", "Time", "Two Rooms Refined", "Time", "Three Rooms RANSAC", "Time", "Three Rooms Refined", "Time", "Four Rooms RANSAC", "Time", "Four Rooms Refined", "Time"])
 
-filepath = 'Filtered fit RMSE.xlsx'
+filepath = 'Plain fit, point-point RMSE.xlsx'
 df.to_excel(filepath, index=False)
 
         
