@@ -13,6 +13,7 @@ class NetworkCommand(Enum):
     Nothing = 0
     GlobalRegistration = 1
     RefineRegistration = 2
+    Manual = 3
 
 class NetworkDataType(Enum):
     Response = 0
@@ -29,12 +30,16 @@ class ModelLoader:
     def reset(self):
         self.pointcloud = o3d.geometry.PointCloud(points = o3d.utility.Vector3dVector(np.empty([0,3])))
         self.pointcloud.normals = o3d.utility.Vector3dVector(np.empty([0,3]))
+        self.counter = 0
+        self.center_transform = np.eye(4)
 
     def __init__(self):
         self.reset()
+    
+    def get_center_transform(self):
+        return self.center_transform
         
-        
-    def append_pointcloud(self, file_name):
+    def append_pointcloud(self, file_name):            
         loaded_pointcloud = o3d.io.read_point_cloud(file_name)
         points = np.asarray(self.pointcloud.points)
         normals = np.asarray(self.pointcloud.normals)
@@ -42,8 +47,17 @@ class ModelLoader:
         normals = np.append(normals, np.asarray(loaded_pointcloud.normals), axis = 0)
         self.pointcloud.points = o3d.utility.Vector3dVector(points)
         self.pointcloud.normals = o3d.utility.Vector3dVector(normals)
-        #o3d.visualization.draw_geometries([self.pointcloud], top = 30, left = 0, point_show_normal=True)
-    
+
+        if self.counter <= 0:
+            self.counter += 1
+            self.center = np.array([0,0,0,0])
+            self.center[:-1] = -self.pointcloud.compute_mean_and_covariance()[0]
+            self.center[2] = 0
+            self.center[3] = 1
+            self.center_transform[:,3] = self.center
+            print([ "CENTROID" ])
+            print(self.center_transform)
+                        
     def load_model(self, _range):
         for i in _range:
             self.append_pointcloud(i)
@@ -53,8 +67,6 @@ class RegistrationManager():
     def __init__(self):
         self.model_loader = ModelLoader()
         self.source_initial_transform = np.identity(4)
-        #self.model_loader.load_model(range(0,5)) #appends room geometries as pointclouds to the whole pointcloud
-        #self.source = copy.deepcopy(self.model_loader.pointcloud)
         
     def draw_registration_result(self, source, target, transformation):
         source_temp = copy.deepcopy(source)
@@ -82,14 +94,12 @@ class RegistrationManager():
             if old_points[i,2]<height:
                 new_points.append(old_points[i,:])
                 new_normals.append(old_normals[i,:])
-                
+
         newPointcloud.points = o3d.utility.Vector3dVector(np.array(new_points))
-        newPointcloud.normals = o3d.utility.Vector3dVector(np.array(new_normals))
-        
+        newPointcloud.normals = o3d.utility.Vector3dVector(np.array(new_normals))        
         return newPointcloud
 
-    def prepare_dataset(self, voxel_size, source, target):
-        #self.draw_registration_result(source, target, np.identity(4))        
+    def prepare_dataset(self, voxel_size, source, target):        
         source_down, source_fpfh = self.preprocess_point_cloud(source, voxel_size)
         target_down, target_fpfh = self.preprocess_point_cloud(target, voxel_size)
         return source_down, target_down, source_fpfh, target_fpfh
@@ -118,39 +128,32 @@ class RegistrationManager():
         print(":: ICP result:")
         print(result)
         return result
-        
+
     def execute_registration(self, command, target):
         print(f"Command: {command}")
         self.target = copy.deepcopy(target)
         self.source = copy.deepcopy(self.model_loader.pointcloud)
-        
+
         source = copy.deepcopy(self.source)
         target = copy.deepcopy(target)
-        
-        if command == NetworkCommand.GlobalRegistration.value:
-            source = self.horisontal_crop(source, 0.5)
-            target = self.horisontal_crop(target, 0.5)
-            source.transform(self.source_initial_transform)
-            
+
+        if command == NetworkCommand.Manual.value:                        
+            self.source_initial_transform = np.dot(self.source_initial_transform, self.model_loader.get_center_transform())
+            print(self.source_initial_transform)
         self.source.transform(self.source_initial_transform)
-        #self.draw_registration_result(self.source, target, np.identity(4))
-        
-        #source.transform(self.source_initial_transform)
-        #self.draw_registration_result(source, target, np.identity(4))
+        self.draw_registration_result(self.source, target, np.identity(4))
+
         voxel_size = .7
         source_down, target_down, source_fpfh, target_fpfh = self.prepare_dataset(voxel_size, source, target)
         result_ransac = np.identity(4)
         if command == NetworkCommand.GlobalRegistration.value:
             print("RANSAC")
             result_ransac = self.execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
-            #self.draw_registration_result(source, target, result_ransac)
         result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)        
-        self.result = result_icp.dot(result_ransac)        
-        
+        self.result = np.dot(result_icp.dot(result_ransac), self.source_initial_transform)
+
         self.source.paint_uniform_color([1,0,0])
-        #self.draw_registration_result(self.source, self.target, self.result)
-        self.source = copy.deepcopy(self.model_loader.pointcloud)
-        #self.draw_registration_result(self.source, self.target, np.identity(4))
+        self.draw_registration_result(self.source, self.target, result_icp)
 
 class InputDataHandler:
     def __init__(self, client):
@@ -234,9 +237,10 @@ class InputDataHandler:
         try:
             self.registration_manager.model_loader.append_pointcloud(f"EmulatedPointcloud {struct.unpack('i', buffer)[0]}.pcd")
             response = NetworkResponseType.AllGood
-        except Exception:
+        except Exception as e:
+            e = sys.exc_info()
             response = NetworkResponseType.DataCorrupt
-            print("Room Load FAILED")
+            print(traceback.print_tb(e.__traceback__))
         self.client.send_response(response)
 
     def handle_network_data(self, command, data_type, buffer):    
@@ -259,7 +263,8 @@ class InputGate(threading.Thread):
         self.PORT = port        
         self.gate = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.receiving = True
-        threading.Thread.__init__(self)
+        threading.Thread.__init__(self, daemon = True)
+        
         
         print("[ INPUT GATE INITIALIZED]")
         
@@ -271,7 +276,7 @@ class InputGate(threading.Thread):
         print("[ CLIENT CONNECTED TO INPUT GATE]")
         self.receive()
         
-    def receive(self):        
+    def receive(self):
         while self.receiving:
             input_buff = []
             command = struct.unpack('>h', self.conn.recv(2))[0]
@@ -290,7 +295,6 @@ class InputGate(threading.Thread):
                         input_buff.append(chunk)
                         self.conn.send(struct.pack('h', NetworkResponseType.AllGood.value))
                         received = True
-                        print(f"Chunk #{i} received")
                     else:
                         errorLog+="\nChunk #{i} corrupt"
                         self.conn.send(struct.pack('h', NetworkResponseType.DataCorrupt.value))
@@ -315,7 +319,8 @@ class OutputGate(threading.Thread):
         self.PORT = port
         self.gate = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.receiving = True
-        threading.Thread.__init__(self)
+        
+        threading.Thread.__init__(self, daemon = True)
         print("[OUTPUT GATE INITIALIZED]")
         
     def run(self):
@@ -351,18 +356,20 @@ class ClientHandler:
     def send_response(self, response):
         self.output_gate.send(NetworkDataType.Response, struct.pack('h', response.value))
         print(f"{response.name} sent back")
-        
+
 class Server:
     def __init__(self, HOST, INPUT_PORT, OUTPUT_PORT):
         self.client = ClientHandler(HOST, INPUT_PORT, OUTPUT_PORT)
     def start_clients(self):
         self.client.start()
-        
-        
-        
+
 HOST = "192.168.0.100"
 INPUT_PORT  = 6000
 OUTPUT_PORT = 5000
 
 server = Server(HOST, INPUT_PORT, OUTPUT_PORT)
 server.start_clients()
+
+while True:
+    if(input() == "quit"):
+        break

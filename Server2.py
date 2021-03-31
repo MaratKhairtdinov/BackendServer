@@ -115,20 +115,17 @@ class RegistrationManager():
                 o3d.registration.TransformationEstimationPointToPlane()).transformation
         print(":: ICP result:")
         print(result)
-        return result
-        
-    files_path = "C:/Users/Marat/Documents/Thesis/BackendServer/RegistrationResults/"
-    files_path+="FourRooms/"
-    
+        return result        
+
     def execute_registration(self, command, target):
         print(f"Command: {command}")
-        self.counter+=1
+
         self.target = copy.deepcopy(target)
         self.source = copy.deepcopy(self.model_loader.pointcloud)        
         
-        o3d.io.write_point_cloud(self.files_path + f"Source{self.counter}.pcd", self.source, False, False, True)
-        o3d.io.write_point_cloud(self.files_path + f"Target{self.counter}.pcd", self.target, False, False, True)
-        np.save(self.files_path + f"InitialTransform{self.counter}.npy", self.source_initial_transform)               
+        o3d.io.write_point_cloud(f"Source.pcd", self.source, False, False, True)
+        o3d.io.write_point_cloud(f"Target.pcd", self.target, False, False, True)
+        np.save(f"InitialTransform.npy", self.source_initial_transform)
 
         self.source.transform(self.source_initial_transform)
         
@@ -138,12 +135,9 @@ class RegistrationManager():
         if command == NetworkCommand.GlobalRegistration.value:
             print("RANSAC")
             result_ransac = self.execute_global_registration(source_down, target_down, source_fpfh, target_fpfh, voxel_size)
-            #self.draw_registration_result(source, target, result_ransac)
-        result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)        
-        self.result = result_icp.dot(result_ransac)        
-        np.save(self.files_path+f"ResultTransform{self.counter}.npy", self.result)
-        #self.source.paint_uniform_color([1,0,0])
-        #self.draw_registration_result(self.source, self.target, self.result)        
+        result_icp = self.refine_registration(self.source, self.target, voxel_size, result_ransac)
+        self.result = result_icp.dot(result_ransac)
+        np.save(f"ResultTransform.npy", self.result)
 
 class InputDataHandler:
     def __init__(self, client):
